@@ -310,7 +310,7 @@ function defaultState() {
     decisionMode: "quick",
     longGame: false,
     firstPlay: false,
-    shadowNeedsQuest: true,
+    shadowNeedsQuest: false,
     round: 1,
     phase: "setup",
     firstPlayer: "shadow",
@@ -495,9 +495,9 @@ function startGame() {
   next.longGame = els.longGameToggle.checked;
   next.firstPlay = els.firstPlayToggle.checked;
   next.phase = "startRound";
-  next.shadowNeedsQuest = true;
+  next.shadowNeedsQuest = false;
   state = next;
-  addLog(`开局：${moduleName(state.module)}。暗影领主开局没有进行中任务；它的第一次指派会优先去崖望旅馆。`);
+  addLog(`开局：${moduleName(state.module)}。请给暗影领主发 2 张公开进行中任务；它的第一次指派照常掷骰判定。`);
   render();
 }
 
@@ -2642,7 +2642,13 @@ function loadState() {
     next.pendingHarborTarget = next.pendingHarborTarget || null;
     next.pendingAmbassadorSpace = next.pendingAmbassadorSpace || null;
     if (next.configured && next.round === 1 && (next.agents?.shadow || 0) === 0) {
-      next.shadowNeedsQuest = true;
+      if (next.pending?.kind === "shadowAction" && next.pending.forcedByNoQuest) {
+        next.pending = null;
+        next.phase = "shadowTurn";
+      }
+      if (!next.pending && ["startRound", "shadowTurn"].includes(next.phase)) {
+        next.shadowNeedsQuest = false;
+      }
     }
     return next;
   } catch {
