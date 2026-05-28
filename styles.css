@@ -33,7 +33,7 @@ body {
   color: var(--ink);
   background:
     linear-gradient(180deg, rgba(33, 20, 12, 0.36), rgba(33, 20, 12, 0.62)),
-    url("./assets/waterdeep-bg.png") center top / cover fixed,
+    url("./assets/waterdeep-bg.webp") center top / cover fixed,
     #2b211a;
 }
 
@@ -112,7 +112,7 @@ label {
   border-radius: 8px;
   background:
     linear-gradient(90deg, rgba(31, 19, 13, 0.92), rgba(93, 34, 29, 0.78)),
-    url("./assets/paper-panel.png") right center / auto 145% no-repeat;
+    url("./assets/paper-panel.webp") right center / auto 145% no-repeat;
   box-shadow: var(--shadow);
   color: #fff6dc;
 }
@@ -217,7 +217,7 @@ body.is-configured .main-grid {
   position: relative;
   background:
     linear-gradient(180deg, rgba(255, 248, 223, 0.94), rgba(232, 211, 160, 0.92)),
-    url("./assets/paper-panel.png") center / cover;
+    url("./assets/paper-panel.webp") center / cover;
   border: 1px solid rgba(96, 64, 31, 0.52);
   border-radius: 8px;
   box-shadow: var(--shadow);
@@ -703,7 +703,7 @@ body.is-configured .main-grid {
 .space-group {
   background:
     linear-gradient(90deg, rgba(255, 250, 232, 0.92), rgba(240, 220, 171, 0.84)),
-    url("./assets/ui-board-space.png") center / 100% 100% no-repeat;
+    url("./assets/ui-board-space.webp") center / 100% 100% no-repeat;
   border: 1px solid rgba(94, 62, 30, 0.34);
   border-radius: 8px;
   box-shadow: inset 0 1px rgba(255, 255, 255, 0.28);
@@ -738,7 +738,7 @@ body.is-configured .main-grid {
   align-items: center;
   background:
     linear-gradient(90deg, rgba(255, 250, 232, 0.92), rgba(240, 220, 171, 0.84)),
-    url("./assets/ui-board-space.png") center / 100% 100% no-repeat;
+    url("./assets/ui-board-space.webp") center / 100% 100% no-repeat;
   border-color: rgba(94, 62, 30, 0.34);
   color: var(--ink);
   display: grid;
@@ -886,21 +886,21 @@ body.is-configured .main-grid {
 .space-btn.shadow {
   background:
     linear-gradient(90deg, rgba(255, 226, 202, 0.94), rgba(231, 187, 153, 0.86)),
-    url("./assets/ui-board-space.png") center / 100% 100% no-repeat;
+    url("./assets/ui-board-space.webp") center / 100% 100% no-repeat;
   border-color: rgba(130, 55, 34, 0.62);
 }
 
 .space-btn.human {
   background:
     linear-gradient(90deg, rgba(222, 241, 237, 0.94), rgba(188, 224, 216, 0.84)),
-    url("./assets/ui-board-space.png") center / 100% 100% no-repeat;
+    url("./assets/ui-board-space.webp") center / 100% 100% no-repeat;
   border-color: rgba(43, 111, 107, 0.58);
 }
 
 .space-btn.ambassador {
   background:
     linear-gradient(90deg, rgba(237, 231, 255, 0.94), rgba(209, 195, 235, 0.84)),
-    url("./assets/ui-board-space.png") center / 100% 100% no-repeat;
+    url("./assets/ui-board-space.webp") center / 100% 100% no-repeat;
   border-color: rgba(92, 69, 123, 0.55);
 }
 
@@ -1238,7 +1238,7 @@ body.is-configured .main-grid {
 .building-card {
   background:
     linear-gradient(180deg, rgba(255, 250, 232, 0.76), rgba(233, 213, 166, 0.76)),
-    url("./assets/ui-building-card.png") left top / 220px auto no-repeat;
+    url("./assets/ui-building-card.webp") left top / 220px auto no-repeat;
 }
 
 .quick-quest {
