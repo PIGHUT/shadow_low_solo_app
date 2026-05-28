@@ -503,6 +503,18 @@ body.is-configured .main-grid {
   gap: 12px;
 }
 
+.setup-choice-field {
+  color: var(--muted);
+  display: grid;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 6px;
+}
+
+.field-label {
+  color: var(--muted);
+}
+
 .checkbox-line {
   align-items: center;
   display: flex;
@@ -986,6 +998,10 @@ body.is-configured .main-grid {
 .segmented-control {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.segmented-control.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .segmented-control button {

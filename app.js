@@ -163,7 +163,7 @@ const spaceDefs = {
   harbor1: { target: "harbor", name: "深水港 1", detail: "打出阴谋，轮末重指派", effects: ["intrigue", "arrow"] },
   harbor2: { target: "harbor", name: "深水港 2", detail: "打出阴谋，轮末重指派", effects: ["intrigue", "arrow"] },
   harbor3: { target: "harbor", name: "深水港 3", detail: "打出阴谋，轮末重指派", effects: ["intrigue", "arrow"] },
-  castle: { target: "castle", name: "深水城城堡", detail: "起始玩家 + 1 阴谋", effects: ["first", "intrigue"] },
+  castle: { target: "castle", name: "深水城城堡", detail: "先手标记 + 1 阴谋", effects: ["first", "intrigue"] },
   blackstaff: { target: "blackstaff", name: "黑杖塔", detail: "1 法师", effects: ["w"] },
   field: { target: "field", name: "凯旋角斗场", detail: "2 战士", effects: ["f", "f"] },
   entryWell: { target: "entryWell", name: "入口井道", detail: "拿 1 任务并打出 1 阴谋", effects: ["quest", "intrigue"] },
@@ -282,7 +282,6 @@ const els = {
   nextBtn: document.getElementById("nextBtn"),
   setupPanel: document.getElementById("setupPanel"),
   moduleSelect: document.getElementById("moduleSelect"),
-  firstPlayerSelect: document.getElementById("firstPlayerSelect"),
   longGameToggle: document.getElementById("longGameToggle"),
   firstPlayToggle: document.getElementById("firstPlayToggle"),
   boardGrid: document.getElementById("boardGrid"),
@@ -387,6 +386,10 @@ function normalizeOwner(owner) {
   return ["none", "human", "shadow"].includes(owner) ? owner : "none";
 }
 
+function normalizePlayer(owner) {
+  return ["human", "shadow"].includes(owner) ? owner : "shadow";
+}
+
 function makeCorruptionTrack() {
   return { "-1": 1, "-2": 3, "-3": 3, "-4": 3, "-5": 3, "-6": 3, "-7": 3, "-8": 3, "-9": 3 };
 }
@@ -487,7 +490,7 @@ function startGame() {
   next.configured = true;
   next.module = els.moduleSelect.value;
   next.decisionMode = "quick";
-  next.firstPlayer = els.firstPlayerSelect.value;
+  next.firstPlayer = normalizePlayer(state.firstPlayer);
   next.currentTurn = next.firstPlayer;
   next.longGame = els.longGameToggle.checked;
   next.firstPlay = els.firstPlayToggle.checked;
@@ -608,6 +611,9 @@ function finishHumanTurn() {
   }
   const placed = state.pendingHumanSpace;
   state.pendingHumanSpace = null;
+  if (targetForSpace(placed) === "castle") {
+    claimFirstPlayer("human", "你拿到先手标记，并抽 1 张阴谋。");
+  }
   state.agents.human = Math.min(totalAgentsFor("human"), state.agents.human + 1);
   addLog(`你的回合完成：代理人已放到 ${displaySpaceName(placed)}。`);
   advanceTurn();
@@ -784,8 +790,7 @@ function applyShadowLocation(spaceId, options = {}) {
   addLog(`${options.ambassadorAction ? "暗影领主指派大使到" : "暗影领主指派到"} ${name}。`);
 
   if (target === "castle") {
-    state.firstPlayer = "shadow";
-    addLog("暗影领主拿起始玩家标记，并获得 1 张隐藏阴谋。");
+    claimFirstPlayer("shadow", "暗影领主拿到先手标记，并获得 1 张隐藏阴谋。");
   }
   if (target === "harbor") {
     addLog("暗影领主洗自己的隐藏阴谋堆并翻 1 张执行；若两种效果都无法结算，将其洗回并给暗影领主 5 胜点。");
@@ -1116,6 +1121,10 @@ function handleAction(action, target) {
     setSpecialOwner(target.dataset.agent, target.dataset.owner);
     render();
   }
+  if (action === "set-first-player") {
+    setFirstPlayer(target.dataset.owner);
+    render();
+  }
   if (action === "resource") {
     adjustShadow(target.dataset.resource, Number(target.dataset.delta));
   }
@@ -1145,6 +1154,9 @@ function handleAction(action, target) {
       render();
       return;
     }
+    if (state.pendingHarborTarget && targetForSpace(state.pendingHarborTarget) === "castle") {
+      claimFirstPlayer("human", "你在深水港重指派时拿到先手标记，并抽 1 张阴谋。");
+    }
     completeHarborReassign(nextHarbor?.space);
     state.pendingHarborTarget = null;
     state.phase = state.harborQueue.length ? "harbor" : "endRound";
@@ -1160,7 +1172,8 @@ function render() {
   document.body.classList.toggle("is-configured", Boolean(state.configured));
   state.decisionMode = "quick";
   els.moduleSelect.value = state.module;
-  els.firstPlayerSelect.value = state.firstPlayer;
+  state.firstPlayer = normalizePlayer(state.firstPlayer);
+  syncSetupFirstPlayerButtons();
   els.longGameToggle.checked = state.longGame;
   els.firstPlayToggle.checked = Boolean(state.firstPlay);
   els.setupPanel.style.display = state.configured ? "none" : "block";
@@ -1205,7 +1218,7 @@ function renderStateStrip() {
   const chips = [
     { label: "模组", value: moduleName(state.module) },
     { label: "轮", value: state.configured ? `${state.round}/8` : "-" },
-    { label: "起始玩家", value: state.firstPlayer === "shadow" ? "暗影领主" : "我" },
+    { label: "先手标记", value: firstPlayerText(state.firstPlayer) },
     { label: "代理人", value: `${state.agents.shadow}/${totalAgentsFor("shadow")} 暗影领主 · ${state.agents.human}/${totalAgentsFor("human")} 我` },
     { label: "模式", value: "流程提示" },
   ];
@@ -1330,7 +1343,7 @@ function renderNextCard() {
         `从当前轮次格移走 ${inlineResource("v", 3)}，放到建造者大厅的待购建筑上：每张 ${inlineResource("v")}。`,
         "结算所有“购买时 / 轮开始”建筑效果。",
         `暗影领主获得等同于轮数的金币：本轮 ${inlineResource("g", state.round)}。`,
-        state.round === 5 ? "双方加入额外代理人。" : "然后由起始玩家开始本轮。",
+        state.round === 5 ? "双方加入额外代理人。" : "然后由持有先手标记的一方开始本轮。",
       ])}
     `;
     return;
@@ -1559,14 +1572,31 @@ function renderSpecialAgentTools() {
   if (!els.specialAgentTools) return;
   els.specialAgentTools.innerHTML = `
     <div>
-      <strong>特殊代理人</strong>
-      <span>按实体桌面选择当前归属；副官会增加对应一方代理人池，大使会在下一轮开始前先指派。</span>
+      <strong>标记与特殊代理人</strong>
+      <span>按实体桌面校正当前归属；先手标记决定后续轮开始谁先行动。</span>
     </div>
     <div class="special-agent-rows">
+      ${firstPlayerOwnerRow()}
       ${specialAgentOwnerRow("lieutenant", "副官", "icon-lieutenant.png", state.special.lieutenantOwner)}
       ${specialAgentOwnerRow("ambassador", "大使", "icon-ambassador.png", state.special.ambassadorOwner)}
     </div>
   `;
+}
+
+function firstPlayerOwnerRow() {
+  return `
+    <div class="special-agent-row">
+      <span class="special-agent-label"><img src="./assets/icon-first-player.png" alt="">先手标记</span>
+      <div class="segmented-control two" role="group" aria-label="先手标记归属">
+        ${firstPlayerButton("shadow", "暗影领主")}
+        ${firstPlayerButton("human", "我")}
+      </div>
+    </div>
+  `;
+}
+
+function firstPlayerButton(owner, label) {
+  return `<button class="${owner === state.firstPlayer ? "secondary" : "ghost"} tiny" data-action="set-first-player" data-owner="${owner}" type="button">${label}</button>`;
 }
 
 function specialAgentOwnerRow(agent, label, icon, owner) {
@@ -1584,6 +1614,32 @@ function specialAgentOwnerRow(agent, label, icon, owner) {
 
 function specialOwnerButton(agent, owner, label, current) {
   return `<button class="${owner === current ? "secondary" : "ghost"} tiny" data-action="set-special-owner" data-agent="${agent}" data-owner="${owner}" type="button">${label}</button>`;
+}
+
+function syncSetupFirstPlayerButtons() {
+  document.querySelectorAll("[data-setup-first]").forEach((button) => {
+    const active = button.dataset.owner === state.firstPlayer;
+    button.classList.toggle("secondary", active);
+    button.classList.toggle("ghost", !active);
+  });
+}
+
+function setFirstPlayer(owner) {
+  const normalized = normalizePlayer(owner);
+  if (state.firstPlayer === normalized && state.configured) return;
+  state.firstPlayer = normalized;
+  if (!state.configured) {
+    state.currentTurn = normalized;
+    return;
+  }
+  const timing = state.phase === "startRound" ? "本轮轮开始会按此标记决定先手。" : "之后的轮开始会按此标记决定先手。";
+  addLog(`先手标记归属：${firstPlayerText(normalized)}。${timing}`);
+}
+
+function claimFirstPlayer(owner, message) {
+  const normalized = normalizePlayer(owner);
+  state.firstPlayer = normalized;
+  addLog(`${message}之后的轮开始由${firstPlayerText(normalized)}先行动。`);
 }
 
 function setSpecialOwner(agent, owner) {
@@ -1606,6 +1662,10 @@ function setSpecialOwner(agent, owner) {
 
 function ownerText(owner) {
   return owner === "human" ? "我" : owner === "shadow" ? "暗影领主" : "无人";
+}
+
+function firstPlayerText(owner) {
+  return normalizePlayer(owner) === "human" ? "我" : "暗影领主";
 }
 
 function renderFinalScore() {
@@ -2101,6 +2161,9 @@ function finishAmbassadorAssignment() {
   }
   state.special.ambassadorSpace = state.pendingAmbassadorSpace;
   state.special.ambassadorOwner = "none";
+  if (targetForSpace(state.pendingAmbassadorSpace) === "castle") {
+    claimFirstPlayer("human", "你用大使拿到先手标记，并抽 1 张阴谋。");
+  }
   addLog(`大使已指派到 ${displaySpaceName(state.pendingAmbassadorSpace)}。${targetForSpace(state.pendingAmbassadorSpace) === "harbor" ? "大使在深水港不会轮末重指派。" : ""}`);
   state.pendingAmbassadorSpace = null;
   state.phase = state.currentTurn === "shadow" ? "shadowTurn" : "humanTurn";
@@ -2502,7 +2565,7 @@ function effectAlt(effect) {
     completed: "已完成任务",
     refresh: "刷新",
     arrow: "重指派",
-    first: "起始玩家",
+    first: "先手标记",
     building: "建筑",
     any: "任意冒险者",
   }[effect] || resourceName(effect);
@@ -2571,6 +2634,8 @@ function loadState() {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return null;
     const next = { ...defaultState(), ...parsed, decisionMode: "quick" };
+    next.firstPlayer = normalizePlayer(next.firstPlayer);
+    next.currentTurn = normalizePlayer(next.currentTurn);
     next.finalScore = normalizeFinalScore(next.finalScore);
     next.special = normalizeSpecialAgents(next.special);
     next.pendingHumanSpace = next.pendingHumanSpace || null;

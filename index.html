@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>深水城领主单人自动机助手</title>
-  <link rel="stylesheet" href="./styles.css?v=20260528-assets-webp-1">
+  <link rel="stylesheet" href="./styles.css?v=20260528-first-player-1">
   <script src="./cards-data.js?v=20260528-quick-only-2"></script>
-  <script src="./app.js?v=20260528-assets-webp-1" defer></script>
+  <script src="./app.js?v=20260528-first-player-1" defer></script>
 </head>
 <body>
   <div class="app-shell">
@@ -57,13 +57,13 @@
               <option value="skullport">骷髅港</option>
             </select>
           </label>
-          <label>
-            起始玩家标记
-            <select id="firstPlayerSelect">
-              <option value="shadow">暗影领主</option>
-              <option value="human">我</option>
-            </select>
-          </label>
+          <div class="setup-choice-field">
+            <span class="field-label">先手标记</span>
+            <div class="segmented-control two setup-first-control" role="group" aria-label="先手标记归属">
+              <button class="secondary" data-action="set-first-player" data-owner="shadow" data-setup-first="1" type="button">暗影领主</button>
+              <button class="ghost" data-action="set-first-player" data-owner="human" data-setup-first="1" type="button">我</button>
+            </div>
+          </div>
           <label class="checkbox-line">
             <input id="longGameToggle" type="checkbox">
             <span>扩展长局代理人数</span>
