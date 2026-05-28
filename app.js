@@ -153,26 +153,32 @@ const spaceDefs = {
   slaversMarket: { target: "slaversMarket", name: "奴隶市场", detail: "2 战士、2 盗贼、腐化", effects: ["f", "f", "r", "r", "x"] },
 };
 
-const baseOrder = [
+const clockwiseOrder = [
   "cliffA",
   "cliffB",
   "cliffC",
   "grinning",
+  "hallMirrors",
   "plinth",
+  "entryWell",
+  "grimStatue",
   "aurora",
   "builder",
+  "castle",
   "harbor1",
   "harbor2",
   "harbor3",
-  "castle",
+  "skullIsland",
+  "slaversMarket",
+  "hallVoice",
   "blackstaff",
   "field",
 ];
 
-const moduleExtras = {
-  base: [],
-  undermountain: ["entryWell", "hallMirrors", "grimStatue"],
-  skullport: ["hallVoice", "skullIsland", "slaversMarket"],
+const moduleSpaces = {
+  base: new Set(["cliffA", "cliffB", "cliffC", "grinning", "plinth", "aurora", "builder", "castle", "harbor1", "harbor2", "harbor3", "blackstaff", "field"]),
+  undermountain: new Set(["cliffA", "cliffB", "cliffC", "grinning", "hallMirrors", "plinth", "entryWell", "grimStatue", "aurora", "builder", "castle", "harbor1", "harbor2", "harbor3", "blackstaff", "field"]),
+  skullport: new Set(["cliffA", "cliffB", "cliffC", "grinning", "plinth", "aurora", "builder", "castle", "harbor1", "harbor2", "harbor3", "skullIsland", "slaversMarket", "hallVoice", "blackstaff", "field"]),
 };
 
 const actionTables = {
@@ -1304,6 +1310,12 @@ function renderHarborCard() {
 
 function renderBoard() {
   const spaces = currentOrder();
+  const orderKey = spaces.join("|");
+  if (els.boardGrid.dataset.orderKey === orderKey) {
+    updateBoardOccupancy();
+    return;
+  }
+
   const html = [];
   for (let index = 0; index < spaces.length; index += 1) {
     const spaceId = spaces[index];
@@ -1320,6 +1332,8 @@ function renderBoard() {
     html.push(spaceButtonHtml(spaceId));
   }
   els.boardGrid.innerHTML = html.join("");
+  els.boardGrid.dataset.orderKey = orderKey;
+  updateBoardOccupancy();
 }
 
 function spaceGroupHtml(label, spaces) {
@@ -1345,6 +1359,18 @@ function spaceButtonHtml(spaceId, extraClass = "") {
       </span>
     </button>
   `;
+}
+
+function updateBoardOccupancy() {
+  els.boardGrid.querySelectorAll("[data-space]").forEach((button) => {
+    const spaceId = button.dataset.space;
+    const owner = state.occupied[spaceId];
+    button.classList.toggle("human", owner === "human");
+    button.classList.toggle("shadow", owner === "shadow");
+    const label = owner === "shadow" ? "暗影领主占用" : owner === "human" ? "我占用" : "空";
+    const status = button.querySelector("small");
+    if (status) status.textContent = label;
+  });
 }
 
 function renderFinalScore() {
@@ -1849,11 +1875,8 @@ function corruptionValue() {
 }
 
 function currentOrder() {
-  const extras = moduleExtras[state.module] || [];
-  const order = baseOrder.slice();
-  const insertAfterCliff = order.indexOf("cliffC") + 1;
-  extras.forEach((space, index) => order.splice(insertAfterCliff + index, 0, space));
-  return order;
+  const enabled = moduleSpaces[state.module] || moduleSpaces.base;
+  return clockwiseOrder.filter((space) => enabled.has(space));
 }
 
 function spacesForTarget(target) {
