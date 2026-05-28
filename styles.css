@@ -178,7 +178,8 @@ h3 {
   grid-template-areas:
     "setup board"
     "command board"
-    "score log";
+    "log board"
+    "score score";
   grid-template-columns: minmax(410px, 0.95fr) minmax(440px, 1.05fr);
   gap: 14px;
   align-items: start;
@@ -1160,15 +1161,17 @@ body.is-configured .main-grid {
 @media (min-width: 1280px) {
   .main-grid {
     grid-template-areas:
-      "setup command score"
-      "setup board log";
+      "setup command board"
+      "setup log board"
+      "score score score";
     grid-template-columns: minmax(330px, 0.78fr) minmax(520px, 1.24fr) minmax(330px, 0.78fr);
   }
 
   body.is-configured .main-grid {
     grid-template-areas:
-      "command board score"
-      "log board score";
+      "command board log"
+      "command board log"
+      "score score score";
   }
 
   .board-grid {
@@ -1176,7 +1179,7 @@ body.is-configured .main-grid {
   }
 
   .score-panel .score-columns {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -1186,8 +1189,8 @@ body.is-configured .main-grid {
       "command"
       "setup"
       "board"
-      "score"
-      "log";
+      "log"
+      "score";
     grid-template-columns: 1fr;
   }
 
@@ -1195,8 +1198,8 @@ body.is-configured .main-grid {
     grid-template-areas:
       "command"
       "board"
-      "score"
-      "log";
+      "log"
+      "score";
   }
 
   .topbar {
