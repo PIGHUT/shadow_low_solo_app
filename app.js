@@ -1304,24 +1304,47 @@ function renderHarborCard() {
 
 function renderBoard() {
   const spaces = currentOrder();
-  els.boardGrid.innerHTML = spaces
-    .map((spaceId) => {
-      const owner = state.occupied[spaceId];
-      const cls = owner ? `space-btn ${owner}` : "space-btn";
-      const label = owner === "shadow" ? "暗影领主占用" : owner === "human" ? "我占用" : "空";
-      const art = artForSpace(spaceId);
-      return `
-        <button class="${cls}" data-action="space" data-space="${spaceId}" type="button">
-          <span class="space-art-wrap"><img class="space-art" src="./assets/${art}" alt=""></span>
-          <span class="space-copy">
-            <strong>${escapeHtml(displaySpaceName(spaceId))}</strong>
-            ${spaceEffectHtml(spaceId)}
-            <small>${label}</small>
-          </span>
-        </button>
-      `;
-    })
-    .join("");
+  const html = [];
+  for (let index = 0; index < spaces.length; index += 1) {
+    const spaceId = spaces[index];
+    if (spaceId === "cliffA") {
+      html.push(spaceGroupHtml("崖望旅馆", ["cliffA", "cliffB", "cliffC"]));
+      index += 2;
+      continue;
+    }
+    if (spaceId === "harbor1") {
+      html.push(spaceGroupHtml("深水港", ["harbor1", "harbor2", "harbor3"]));
+      index += 2;
+      continue;
+    }
+    html.push(spaceButtonHtml(spaceId));
+  }
+  els.boardGrid.innerHTML = html.join("");
+}
+
+function spaceGroupHtml(label, spaces) {
+  return `
+    <div class="space-group" aria-label="${escapeHtml(label)}">
+      ${spaces.map((spaceId) => spaceButtonHtml(spaceId, "space-segment")).join("")}
+    </div>
+  `;
+}
+
+function spaceButtonHtml(spaceId, extraClass = "") {
+  const owner = state.occupied[spaceId];
+  const cls = ["space-btn", extraClass, owner || ""].filter(Boolean).join(" ");
+  const label = owner === "shadow" ? "暗影领主占用" : owner === "human" ? "我占用" : "空";
+  const art = artForSpace(spaceId);
+  return `
+    <button class="${cls}" data-action="space" data-space="${spaceId}" type="button">
+      <span class="space-art-wrap"><img class="space-art" src="./assets/${art}" alt=""></span>
+      <span class="space-copy">
+        <strong>${escapeHtml(displaySpaceName(spaceId))}</strong>
+        ${spaceEffectHtml(spaceId)}
+        <small>${label}</small>
+      </span>
+    </button>
+  `;
 }
 
 function renderFinalScore() {

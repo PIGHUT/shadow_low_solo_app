@@ -696,6 +696,19 @@ body.is-configured .main-grid {
   gap: 8px;
 }
 
+.space-group {
+  background:
+    linear-gradient(90deg, rgba(255, 250, 232, 0.92), rgba(240, 220, 171, 0.84)),
+    url("./assets/ui-board-space.png") center / 100% 100% no-repeat;
+  border: 1px solid rgba(94, 62, 30, 0.34);
+  border-radius: 8px;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.28);
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+}
+
 .space-btn {
   align-items: center;
   background:
@@ -710,6 +723,32 @@ body.is-configured .main-grid {
   justify-items: stretch;
   padding: 9px;
   text-align: left;
+}
+
+.space-group .space-btn {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  grid-template-columns: 50px minmax(0, 1fr);
+  min-width: 0;
+  padding: 8px;
+}
+
+.space-group .space-btn + .space-btn {
+  border-left: 1px solid rgba(94, 62, 30, 0.28);
+}
+
+.space-group .space-btn.shadow {
+  background: linear-gradient(90deg, rgba(255, 226, 202, 0.74), rgba(231, 187, 153, 0.58));
+}
+
+.space-group .space-btn.human {
+  background: linear-gradient(90deg, rgba(222, 241, 237, 0.78), rgba(188, 224, 216, 0.58));
+}
+
+.space-group .space-art {
+  max-width: 46px;
+  max-height: 52px;
 }
 
 .space-art-wrap {
@@ -1241,5 +1280,20 @@ body.is-configured .main-grid {
 
   .score-adventurers {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .space-group .space-btn {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    padding: 8px 6px;
+    text-align: center;
+  }
+
+  .space-group .space-art-wrap {
+    display: none;
+  }
+
+  .space-group .space-copy {
+    justify-items: center;
   }
 }
