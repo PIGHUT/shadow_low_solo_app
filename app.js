@@ -148,6 +148,8 @@ const boardImageAssets = Array.from(new Set([
   "res-rogue.png",
   "res-vp.png",
   "res-wizard.png",
+  "icon-ambassador.png",
+  "icon-lieutenant.png",
 ]));
 
 const spaceDefs = {
@@ -284,6 +286,7 @@ const els = {
   longGameToggle: document.getElementById("longGameToggle"),
   firstPlayToggle: document.getElementById("firstPlayToggle"),
   boardGrid: document.getElementById("boardGrid"),
+  specialAgentTools: document.getElementById("specialAgentTools"),
   shadowResources: document.getElementById("shadowResources"),
   activeQuestList: document.getElementById("activeQuestList"),
   questSearch: document.getElementById("questSearch"),
@@ -316,7 +319,15 @@ function defaultState() {
     agents: { shadow: 0, human: 0 },
     occupied: {},
     harborQueue: [],
+    pendingHumanSpace: null,
+    pendingHarborTarget: null,
+    pendingAmbassadorSpace: null,
     pending: null,
+    special: {
+      lieutenantOwner: "none",
+      ambassadorOwner: "none",
+      ambassadorSpace: null,
+    },
     corruptionTrack: makeCorruptionTrack(),
     shadow: {
       vp: 0,
@@ -362,6 +373,20 @@ function normalizeFinalScore(score) {
   };
 }
 
+function normalizeSpecialAgents(special) {
+  const lieutenantOwner = special?.lieutenantOwner || (special?.lieutenant ? "human" : "none");
+  const ambassadorOwner = special?.ambassadorOwner || (special?.ambassadorReady ? "human" : "none");
+  return {
+    lieutenantOwner: normalizeOwner(lieutenantOwner),
+    ambassadorOwner: normalizeOwner(ambassadorOwner),
+    ambassadorSpace: special?.ambassadorSpace || null,
+  };
+}
+
+function normalizeOwner(owner) {
+  return ["none", "human", "shadow"].includes(owner) ? owner : "none";
+}
+
 function makeCorruptionTrack() {
   return { "-1": 1, "-2": 3, "-3": 3, "-4": 3, "-5": 3, "-6": 3, "-7": 3, "-8": 3, "-9": 3 };
 }
@@ -377,6 +402,10 @@ function bindEvents() {
   onClick("clearOccupiedBtn", () => {
     state.occupied = {};
     state.harborQueue = [];
+    state.pendingHumanSpace = null;
+    state.pendingHarborTarget = null;
+    state.pendingAmbassadorSpace = null;
+    state.special.ambassadorSpace = null;
     addLog("已清空本轮行动格占用。");
     render();
   });
@@ -492,6 +521,7 @@ function nextStep() {
     return;
   }
   if (state.phase === "startRound") resolveStartRound();
+  else if (state.phase === "ambassador") finishAmbassadorAssignment();
   else if (state.phase === "shadowTurn") planShadowAction();
   else if (state.phase === "humanTurn") finishHumanTurn();
   else if (state.phase === "harbor") resolveNextHarbor();
@@ -502,22 +532,38 @@ function resolveStartRound() {
   if (!state.configured) return;
   if (state.phase !== "startRound") return;
   state.pending = null;
+  state.pendingHumanSpace = null;
+  state.pendingHarborTarget = null;
+  state.pendingAmbassadorSpace = null;
   if (state.round === 5) addLog("第 5 轮：双方把额外代理人加入代理人池。");
   addLog(`第 ${state.round} 轮开始：建造者大厅每张待购建筑 +1 胜点；暗影领主按实体规则获得 ${state.round} 金币。`);
   state.currentTurn = state.firstPlayer;
+  if (state.special.ambassadorOwner === "human") {
+    state.phase = "ambassador";
+    addLog("大使归你指派：在本轮任何玩家行动前，先把大使放到一个未占用行动格并执行该行动。");
+    render();
+    return;
+  }
+  if (state.special.ambassadorOwner === "shadow") {
+    state.phase = "shadowTurn";
+    addLog("大使归暗影领主指派：本轮任何玩家行动前，先为大使判定一次暗影领主行动。");
+    planShadowAction({ ambassadorAction: true });
+    return;
+  }
   setTurnPhase();
   continueAfterTurnTransition();
 }
 
 function setTurnPhase() {
-  const total = totalAgentsThisRound();
-  if (state.agents.shadow >= total && state.agents.human >= total) {
+  const shadowTotal = totalAgentsFor("shadow");
+  const humanTotal = totalAgentsFor("human");
+  if (state.agents.shadow >= shadowTotal && state.agents.human >= humanTotal) {
     state.phase = state.harborQueue.length ? "harbor" : "endRound";
     return;
   }
-  if (state.currentTurn === "shadow" && state.agents.shadow >= total) state.currentTurn = "human";
-  if (state.currentTurn === "human" && state.agents.human >= total) state.currentTurn = "shadow";
-  if (state.agents.shadow >= total && state.agents.human >= total) {
+  if (state.currentTurn === "shadow" && state.agents.shadow >= shadowTotal) state.currentTurn = "human";
+  if (state.currentTurn === "human" && state.agents.human >= humanTotal) state.currentTurn = "shadow";
+  if (state.agents.shadow >= shadowTotal && state.agents.human >= humanTotal) {
     state.phase = state.harborQueue.length ? "harbor" : "endRound";
   } else {
     state.phase = state.currentTurn === "shadow" ? "shadowTurn" : "humanTurn";
@@ -525,15 +571,16 @@ function setTurnPhase() {
 }
 
 function advanceTurn() {
-  const total = totalAgentsThisRound();
-  if (state.agents.shadow >= total && state.agents.human >= total) {
+  const shadowTotal = totalAgentsFor("shadow");
+  const humanTotal = totalAgentsFor("human");
+  if (state.agents.shadow >= shadowTotal && state.agents.human >= humanTotal) {
     state.phase = state.harborQueue.length ? "harbor" : "endRound";
     return;
   }
   const other = state.currentTurn === "shadow" ? "human" : "shadow";
   state.currentTurn = other;
-  if (state.currentTurn === "shadow" && state.agents.shadow >= total) state.currentTurn = "human";
-  if (state.currentTurn === "human" && state.agents.human >= total) state.currentTurn = "shadow";
+  if (state.currentTurn === "shadow" && state.agents.shadow >= shadowTotal) state.currentTurn = "human";
+  if (state.currentTurn === "human" && state.agents.human >= humanTotal) state.currentTurn = "shadow";
   setTurnPhase();
 }
 
@@ -554,8 +601,15 @@ function continueAfterTurnTransition() {
 
 function finishHumanTurn() {
   if (!state.configured || state.phase !== "humanTurn") return;
-  state.agents.human = Math.min(totalAgentsThisRound(), state.agents.human + 1);
-  addLog("你的回合完成：已计入 1 个代理人。若你去了深水港，确认下方对应港口格已标记为你。");
+  if (!state.pendingHumanSpace) {
+    addLog("你的回合：请先在版图上选择一个未占用行动格。");
+    render();
+    return;
+  }
+  const placed = state.pendingHumanSpace;
+  state.pendingHumanSpace = null;
+  state.agents.human = Math.min(totalAgentsFor("human"), state.agents.human + 1);
+  addLog(`你的回合完成：代理人已放到 ${displaySpaceName(placed)}。`);
   advanceTurn();
   continueAfterTurnTransition();
 }
@@ -572,6 +626,10 @@ function finishRound() {
   state.pending = null;
   state.occupied = {};
   state.harborQueue = [];
+  state.pendingHumanSpace = null;
+  state.pendingHarborTarget = null;
+  state.pendingAmbassadorSpace = null;
+  state.special.ambassadorSpace = null;
   state.agents = { shadow: 0, human: 0 };
   addLog(`第 ${state.round - 1} 轮结束：收回所有代理人。`);
   render();
@@ -580,7 +638,8 @@ function finishRound() {
 function planShadowAction(options = {}) {
   if (!state.configured) return;
   const harborReassign = Boolean(options.harborReassign);
-  if (!harborReassign && state.phase !== "shadowTurn") return;
+  const ambassadorAction = Boolean(options.ambassadorAction);
+  if (!harborReassign && !ambassadorAction && state.phase !== "shadowTurn") return;
   const forcedByNoQuest = state.shadowNeedsQuest && !options.forcedTarget;
   const forcedCliff = options.forcedTarget === "cliffwatch" || forcedByNoQuest;
   const table = actionTables[state.module];
@@ -598,6 +657,7 @@ function planShadowAction(options = {}) {
   state.pending = {
     kind: "shadowAction",
     harborReassign,
+    ambassadorAction,
     sourceHarbor: options.sourceHarbor || (harborReassign ? nextHarborEntry()?.space : null),
     forcedCliff,
     tableDie: table.die,
@@ -658,36 +718,40 @@ function confirmShadowAction() {
 
   if (pending.manualAdvanced) {
     addLog("暗影领主指派到高级建筑。请按实体桌面选择建筑并执行牌面效果。");
-    finishShadowAction(pending.harborReassign);
+    finishShadowAction(pending.harborReassign, { ambassadorAction: pending.ambassadorAction });
     render();
     return;
   }
 
-  occupySpace(pending.spaceId, "shadow");
-  const decision = applyShadowLocation(pending.spaceId);
+  occupySpace(pending.spaceId, pending.ambassadorAction ? "ambassador" : "shadow");
+  const decision = applyShadowLocation(pending.spaceId, { ambassadorAction: pending.ambassadorAction });
   if (decision) {
-    state.pending = { ...decision, harborReassign: pending.harborReassign, sourceHarbor: pending.sourceHarbor };
+    state.pending = { ...decision, harborReassign: pending.harborReassign, sourceHarbor: pending.sourceHarbor, ambassadorAction: pending.ambassadorAction };
     render();
     return;
   }
-  finishShadowAction(pending.harborReassign);
+  finishShadowAction(pending.harborReassign, { ambassadorAction: pending.ambassadorAction });
   render();
 }
 
-function finishShadowAction(harborReassign) {
-  if (!harborReassign) {
-    state.agents.shadow = Math.min(totalAgentsThisRound(), state.agents.shadow + 1);
+function finishShadowAction(harborReassign, options = {}) {
+  if (options.ambassadorAction) {
+    state.special.ambassadorSpace = state.pending?.spaceId || null;
+    state.special.ambassadorOwner = "none";
+  } else if (!harborReassign) {
+    state.agents.shadow = Math.min(totalAgentsFor("shadow"), state.agents.shadow + 1);
   } else {
     completeHarborReassign(state.pending?.sourceHarbor);
   }
-  state.pending = { kind: "shadowQuestCheck", harborReassign };
-  addLog("暗影领主行动结束：进入回合末任务检查。");
+  state.pending = { kind: "shadowQuestCheck", harborReassign, ambassadorAction: Boolean(options.ambassadorAction) };
+  addLog(`${options.ambassadorAction ? "暗影领主大使行动" : "暗影领主行动"}结束：进入回合末任务检查。`);
 }
 
 function finishShadowQuestCheck(noActiveQuests) {
   const pending = state.pending;
   if (!pending || pending.kind !== "shadowQuestCheck") return;
   const harborReassign = Boolean(pending.harborReassign);
+  const ambassadorAction = Boolean(pending.ambassadorAction);
   if (noActiveQuests) {
     state.shadowNeedsQuest = true;
     addLog("任务检查：暗影领主已经没有进行中任务；下一次指派优先去崖望旅馆拿任务。");
@@ -696,7 +760,9 @@ function finishShadowQuestCheck(noActiveQuests) {
     addLog("任务检查：已处理可完成任务；暗影领主仍有进行中任务。");
   }
   state.pending = null;
-  if (harborReassign) {
+  if (ambassadorAction) {
+    setTurnPhase();
+  } else if (harborReassign) {
     state.phase = state.harborQueue.length ? "harbor" : "endRound";
   } else {
     advanceTurn();
@@ -708,14 +774,14 @@ function finishQuickDecision() {
   const pending = state.pending;
   if (pending?.after === "playIntrigue") playShadowIntrigue(pending.source);
   const harborReassign = Boolean(pending?.harborReassign);
-  finishShadowAction(harborReassign);
+  finishShadowAction(harborReassign, { ambassadorAction: Boolean(pending?.ambassadorAction) });
   render();
 }
 
-function applyShadowLocation(spaceId) {
+function applyShadowLocation(spaceId, options = {}) {
   const target = targetForSpace(spaceId);
   const name = displaySpaceName(spaceId);
-  addLog(`暗影领主指派到 ${name}。`);
+  addLog(`${options.ambassadorAction ? "暗影领主指派大使到" : "暗影领主指派到"} ${name}。`);
 
   if (target === "castle") {
     state.firstPlayer = "shadow";
@@ -723,8 +789,12 @@ function applyShadowLocation(spaceId) {
   }
   if (target === "harbor") {
     addLog("暗影领主洗自己的隐藏阴谋堆并翻 1 张执行；若两种效果都无法结算，将其洗回并给暗影领主 5 胜点。");
-    addHarbor(spaceId, "shadow");
-    addLog("已加入深水港重指派队列；本轮普通代理人全部行动后，会按港口编号补一次非深水港行动。");
+    if (options.ambassadorAction) {
+      addLog("大使在深水港不会加入轮末重指派队列。");
+    } else {
+      addHarbor(spaceId, "shadow");
+      addLog("已加入深水港重指派队列；本轮普通代理人全部行动后，会按港口编号补一次非深水港行动。");
+    }
   }
   if (target === "builder") {
     return { kind: "quickBuilder", source: "建造者大厅" };
@@ -996,12 +1066,14 @@ function handleAction(action, target) {
   if (action === "confirm-shadow") confirmShadowAction();
   if (action === "reroll-shadow") planShadowAction({
     harborReassign: Boolean(state.pending?.harborReassign),
+    ambassadorAction: Boolean(state.pending?.ambassadorAction),
     sourceHarbor: state.pending?.sourceHarbor,
   });
   if (action === "force-cliffwatch") {
     planShadowAction({
       forcedTarget: "cliffwatch",
       harborReassign: Boolean(state.pending?.harborReassign),
+      ambassadorAction: Boolean(state.pending?.ambassadorAction),
       sourceHarbor: state.pending?.sourceHarbor,
     });
   }
@@ -1037,13 +1109,12 @@ function handleAction(action, target) {
     render();
   }
   if (action === "space") {
-    toggleSpace(target.dataset.space);
-    if (state.phase === "harbor") render();
-    else {
-      renderBoard();
-      saveState();
-    }
+    handleSpaceSelection(target.dataset.space);
     return;
+  }
+  if (action === "set-special-owner") {
+    setSpecialOwner(target.dataset.agent, target.dataset.owner);
+    render();
   }
   if (action === "resource") {
     adjustShadow(target.dataset.resource, Number(target.dataset.delta));
@@ -1068,7 +1139,14 @@ function handleAction(action, target) {
     render();
   }
   if (action === "harbor-done") {
-    completeHarborReassign(nextHarborEntry()?.space);
+    const nextHarbor = nextHarborEntry();
+    if (nextHarbor?.owner === "human" && !state.pendingHarborTarget) {
+      addLog("深水港重指派：请先在版图上选择一个非深水港的未占用行动格。");
+      render();
+      return;
+    }
+    completeHarborReassign(nextHarbor?.space);
+    state.pendingHarborTarget = null;
     state.phase = state.harborQueue.length ? "harbor" : "endRound";
     continueAfterTurnTransition();
   }
@@ -1090,6 +1168,7 @@ function render() {
   renderNextCard();
   renderPrimaryAction();
   renderBoard();
+  renderSpecialAgentTools();
   renderFinalScore();
   renderLog();
   saveState();
@@ -1108,8 +1187,9 @@ function primaryActionConfig() {
   if (state.pending?.kind === "shadowQuestCheck") return { label: "请完成任务检查", disabled: true };
   if (state.pending?.kind === "shadowAction") return { label: "确认已执行" };
   if (state.phase === "startRound") return { label: "开始本轮" };
+  if (state.phase === "ambassador") return { label: state.pendingAmbassadorSpace ? "大使行动已执行" : "先选择大使行动格", disabled: !state.pendingAmbassadorSpace };
   if (state.phase === "shadowTurn") return { label: "判定行动" };
-  if (state.phase === "humanTurn") return { label: "我的回合完成" };
+  if (state.phase === "humanTurn") return { label: state.pendingHumanSpace ? "我的回合完成" : "先选择行动格", disabled: !state.pendingHumanSpace };
   if (state.phase === "harbor") {
     const nextHarbor = nextHarborEntry();
     if (nextHarbor?.owner === "shadow") return { label: "判定重指派" };
@@ -1126,7 +1206,7 @@ function renderStateStrip() {
     { label: "模组", value: moduleName(state.module) },
     { label: "轮", value: state.configured ? `${state.round}/8` : "-" },
     { label: "起始玩家", value: state.firstPlayer === "shadow" ? "暗影领主" : "我" },
-    { label: "代理人", value: `${state.agents.shadow}/${totalAgentsThisRound()} 暗影领主 · ${state.agents.human}/${totalAgentsThisRound()} 我` },
+    { label: "代理人", value: `${state.agents.shadow}/${totalAgentsFor("shadow")} 暗影领主 · ${state.agents.human}/${totalAgentsFor("human")} 我` },
     { label: "模式", value: "流程提示" },
   ];
   els.stateStrip.innerHTML = chips
@@ -1227,7 +1307,7 @@ function renderNextCard() {
           `执行：${actionHintForSpaceHtml(pending.spaceId)}`,
           `${inlineEffect("arrow")} 执行完后点击确认，下一步会进入回合末任务检查。`,
         ];
-    els.stepTitle.textContent = pending.harborReassign ? "暗影领主港口重指派" : "暗影领主行动";
+    els.stepTitle.textContent = pending.ambassadorAction ? "暗影领主指派大使" : pending.harborReassign ? "暗影领主港口重指派" : "暗影领主行动";
     els.nextCard.innerHTML = `
       <h3>${escapeHtml(finalSpace)}</h3>
       ${diceTrayHtml(dice)}
@@ -1266,14 +1346,28 @@ function renderNextCard() {
     return;
   }
 
+  if (state.phase === "ambassador") {
+    els.stepTitle.textContent = "指派大使";
+    els.nextCard.innerHTML = `
+      <h3>本轮开始前先指派大使</h3>
+      ${guideList([
+        "在版图上选择一个未占用行动格，放置大使并执行该行动。",
+        "大使执行行动后，占用该行动格；它对所有玩家都算作对手代理人。",
+        "如果把大使放到深水港，它不会在轮末重指派。",
+        state.pendingAmbassadorSpace ? `已选择：${escapeHtml(displaySpaceName(state.pendingAmbassadorSpace))}。` : "当前可选行动格已经高亮。",
+      ])}
+    `;
+    return;
+  }
+
   if (state.phase === "humanTurn") {
     els.stepTitle.textContent = "轮到你";
     els.nextCard.innerHTML = `
       <h3>指派 1 个代理人</h3>
       <ul>
-        <li>把你的代理人放到一个未占用行动格，执行该行动。</li>
+        <li>在版图上选择一个高亮的未占用行动格，放置你的代理人并执行该行动。</li>
         <li>你可以完成 1 个任务；若去了深水港，稍后会进入港口重指派。</li>
-        <li>在“行动格占用”里点一下你的落点，再点下方主按钮。</li>
+        <li>${state.pendingHumanSpace ? `已选择：${escapeHtml(displaySpaceName(state.pendingHumanSpace))}。` : "选择行动格后，下方按钮才会继续。"}</li>
       </ul>
     `;
     return;
@@ -1325,12 +1419,18 @@ function renderHarborCard() {
   } else {
     els.nextCard.innerHTML = `
       <h3>你的 ${displaySpaceName(next.space)}</h3>
-      <p>把该代理人重指派到一个非深水港的未占用行动格，执行行动并最多完成 1 个任务。</p>
+      <p>在版图上选择一个非深水港的高亮空位，重指派该代理人，执行行动并最多完成 1 个任务。</p>
+      ${state.pendingHarborTarget ? `<p>已选择：${escapeHtml(displaySpaceName(state.pendingHarborTarget))}。</p>` : ""}
       <div class="button-row" style="margin-top:12px">
-        <button class="primary" data-action="harbor-done" type="button">该港口代理人已处理</button>
+        <button class="primary" data-action="harbor-done" type="button" ${state.pendingHarborTarget ? "" : "disabled"}>该港口代理人已处理</button>
       </div>
     `;
   }
+}
+
+function renderHarborActionButton() {
+  const button = els.nextCard.querySelector('[data-action="harbor-done"]');
+  if (button) button.disabled = !state.pendingHarborTarget;
 }
 
 function renderBoard() {
@@ -1410,7 +1510,7 @@ function spaceGroupHtml(label, spaces, options = {}) {
 function spaceButtonHtml(spaceId, extraClass = "", options = {}) {
   const owner = state.occupied[spaceId];
   const cls = ["space-btn", extraClass, owner || ""].filter(Boolean).join(" ");
-  const label = owner === "shadow" ? "暗影领主占用" : owner === "human" ? "我占用" : "空";
+  const label = ownerLabel(owner);
   const art = artForSpace(spaceId);
   const name = options.label || displaySpaceName(spaceId);
   return `
@@ -1431,10 +1531,81 @@ function updateBoardOccupancy() {
     const owner = state.occupied[spaceId];
     button.classList.toggle("human", owner === "human");
     button.classList.toggle("shadow", owner === "shadow");
-    const label = owner === "shadow" ? "暗影领主占用" : owner === "human" ? "我占用" : "空";
+    button.classList.toggle("ambassador", owner === "ambassador");
+    const label = ownerLabel(owner);
     const status = button.querySelector("small");
     if (status) status.textContent = label;
   });
+  updateBoardInteractivity();
+}
+
+function ownerLabel(owner) {
+  if (owner === "shadow") return "暗影领主占用";
+  if (owner === "human") return "我占用";
+  if (owner === "ambassador") return "大使占用";
+  return "空";
+}
+
+function updateBoardInteractivity() {
+  const mode = boardPlacementMode();
+  els.boardGrid.querySelectorAll("[data-space]").forEach((button) => {
+    const selectable = canSelectSpace(button.dataset.space, mode);
+    button.disabled = !selectable;
+    button.classList.toggle("placeable", selectable);
+  });
+}
+
+function renderSpecialAgentTools() {
+  if (!els.specialAgentTools) return;
+  els.specialAgentTools.innerHTML = `
+    <div>
+      <strong>特殊代理人</strong>
+      <span>按实体桌面选择当前归属；副官会增加对应一方代理人池，大使会在下一轮开始前先指派。</span>
+    </div>
+    <div class="special-agent-rows">
+      ${specialAgentOwnerRow("lieutenant", "副官", "icon-lieutenant.png", state.special.lieutenantOwner)}
+      ${specialAgentOwnerRow("ambassador", "大使", "icon-ambassador.png", state.special.ambassadorOwner)}
+    </div>
+  `;
+}
+
+function specialAgentOwnerRow(agent, label, icon, owner) {
+  return `
+    <div class="special-agent-row">
+      <span class="special-agent-label"><img src="./assets/${icon}" alt="">${label}</span>
+      <div class="segmented-control" role="group" aria-label="${label}归属">
+        ${specialOwnerButton(agent, "none", "无人", owner)}
+        ${specialOwnerButton(agent, "human", "我", owner)}
+        ${specialOwnerButton(agent, "shadow", "暗影领主", owner)}
+      </div>
+    </div>
+  `;
+}
+
+function specialOwnerButton(agent, owner, label, current) {
+  return `<button class="${owner === current ? "secondary" : "ghost"} tiny" data-action="set-special-owner" data-agent="${agent}" data-owner="${owner}" type="button">${label}</button>`;
+}
+
+function setSpecialOwner(agent, owner) {
+  const normalized = normalizeOwner(owner);
+  if (agent === "lieutenant") {
+    state.special.lieutenantOwner = normalized;
+    if (state.agents.human > totalAgentsFor("human")) state.agents.human = totalAgentsFor("human");
+    if (state.agents.shadow > totalAgentsFor("shadow")) state.agents.shadow = totalAgentsFor("shadow");
+    addLog(`副官归属：${ownerText(normalized)}。`);
+  }
+  if (agent === "ambassador") {
+    state.special.ambassadorOwner = normalized;
+    if (normalized === "none") {
+      clearPendingAmbassadorSpace();
+      state.special.ambassadorSpace = null;
+    }
+    addLog(`大使归属：${ownerText(normalized)}。`);
+  }
+}
+
+function ownerText(owner) {
+  return owner === "human" ? "我" : owner === "shadow" ? "暗影领主" : "无人";
 }
 
 function renderFinalScore() {
@@ -1830,6 +2001,113 @@ function completeHarborReassign(space) {
   delete state.occupied[completedSpace];
 }
 
+function handleSpaceSelection(spaceId) {
+  const mode = boardPlacementMode();
+  if (!mode || !canSelectSpace(spaceId, mode)) return;
+  if (mode.kind === "human") selectHumanSpace(spaceId);
+  if (mode.kind === "harbor") selectHumanHarborReassign(spaceId);
+  if (mode.kind === "ambassador") selectAmbassadorSpace(spaceId);
+}
+
+function boardPlacementMode() {
+  if (state.phase === "humanTurn") return { kind: "human" };
+  if (state.phase === "ambassador") return { kind: "ambassador" };
+  if (state.phase === "harbor") {
+    const next = nextHarborEntry();
+    if (next?.owner === "human") return { kind: "harbor", source: next.space };
+  }
+  return null;
+}
+
+function canSelectSpace(spaceId, mode = boardPlacementMode()) {
+  if (!spaceId || !mode) return false;
+  const owner = state.occupied[spaceId];
+  if (mode.kind === "human") return !owner || state.pendingHumanSpace === spaceId;
+  if (mode.kind === "harbor") return targetForSpace(spaceId) !== "harbor" && (!owner || state.pendingHarborTarget === spaceId);
+  if (mode.kind === "ambassador") return !owner || state.pendingAmbassadorSpace === spaceId;
+  return false;
+}
+
+function selectHumanSpace(spaceId) {
+  if (state.pendingHumanSpace === spaceId) {
+    clearHumanPendingSpace();
+  } else {
+    clearHumanPendingSpace();
+    occupySpace(spaceId, "human");
+    state.pendingHumanSpace = spaceId;
+  }
+  renderBoard();
+  renderPrimaryAction();
+  renderNextCard();
+  saveState();
+}
+
+function clearHumanPendingSpace() {
+  const space = state.pendingHumanSpace;
+  if (!space) return;
+  if (state.occupied[space] === "human") delete state.occupied[space];
+  state.harborQueue = state.harborQueue.filter((item) => item.space !== space);
+  state.pendingHumanSpace = null;
+}
+
+function selectHumanHarborReassign(spaceId) {
+  if (state.pendingHarborTarget === spaceId) {
+    clearPendingHarborTarget();
+  } else {
+    clearPendingHarborTarget();
+    occupySpace(spaceId, "human");
+    state.pendingHarborTarget = spaceId;
+  }
+  renderBoard();
+  renderHarborActionButton();
+  saveState();
+}
+
+function clearPendingHarborTarget() {
+  const space = state.pendingHarborTarget;
+  if (!space) return;
+  if (state.occupied[space] === "human") delete state.occupied[space];
+  state.harborQueue = state.harborQueue.filter((item) => item.space !== space);
+  state.pendingHarborTarget = null;
+}
+
+function selectAmbassadorSpace(spaceId) {
+  if (state.pendingAmbassadorSpace === spaceId) {
+    clearPendingAmbassadorSpace();
+  } else {
+    clearPendingAmbassadorSpace();
+    occupySpace(spaceId, "ambassador");
+    state.pendingAmbassadorSpace = spaceId;
+  }
+  renderBoard();
+  renderPrimaryAction();
+  renderNextCard();
+  saveState();
+}
+
+function clearPendingAmbassadorSpace() {
+  const space = state.pendingAmbassadorSpace;
+  if (!space) return;
+  if (state.occupied[space] === "ambassador") delete state.occupied[space];
+  state.pendingAmbassadorSpace = null;
+}
+
+function finishAmbassadorAssignment() {
+  if (state.phase !== "ambassador") return;
+  if (!state.pendingAmbassadorSpace) {
+    addLog("大使：请先在版图上选择一个未占用行动格。");
+    render();
+    return;
+  }
+  state.special.ambassadorSpace = state.pendingAmbassadorSpace;
+  state.special.ambassadorOwner = "none";
+  addLog(`大使已指派到 ${displaySpaceName(state.pendingAmbassadorSpace)}。${targetForSpace(state.pendingAmbassadorSpace) === "harbor" ? "大使在深水港不会轮末重指派。" : ""}`);
+  state.pendingAmbassadorSpace = null;
+  state.phase = state.currentTurn === "shadow" ? "shadowTurn" : "humanTurn";
+  setTurnPhase();
+  continueAfterTurnTransition();
+}
+
 function toggleSpace(spaceId) {
   const current = state.occupied[spaceId];
   if (!current) {
@@ -1845,7 +2123,7 @@ function toggleSpace(spaceId) {
 function occupySpace(spaceId, owner) {
   if (!spaceId) return;
   state.occupied[spaceId] = owner;
-  if (targetForSpace(spaceId) === "harbor") addHarbor(spaceId, owner);
+  if (targetForSpace(spaceId) === "harbor" && owner !== "ambassador") addHarbor(spaceId, owner);
 }
 
 function adjustShadow(resource, delta, rerender = true) {
@@ -2087,8 +2365,13 @@ function freeAdvancedIndexes() {
 }
 
 function totalAgentsThisRound() {
+  return totalAgentsFor("shadow");
+}
+
+function totalAgentsFor(side) {
   const base = state.longGame ? 5 : 4;
-  return state.round >= 5 ? base + 1 : base;
+  const roundTotal = state.round >= 5 ? base + 1 : base;
+  return state.special?.lieutenantOwner === side ? roundTotal + 1 : roundTotal;
 }
 
 function parseTokens(tokens) {
@@ -2257,6 +2540,7 @@ function phaseName(phase) {
   return {
     setup: "开局",
     startRound: "轮开始",
+    ambassador: "大使",
     shadowTurn: "暗影领主",
     humanTurn: "玩家",
     harbor: "深水港",
@@ -2288,6 +2572,10 @@ function loadState() {
     if (!parsed || typeof parsed !== "object") return null;
     const next = { ...defaultState(), ...parsed, decisionMode: "quick" };
     next.finalScore = normalizeFinalScore(next.finalScore);
+    next.special = normalizeSpecialAgents(next.special);
+    next.pendingHumanSpace = next.pendingHumanSpace || null;
+    next.pendingHarborTarget = next.pendingHarborTarget || null;
+    next.pendingAmbassadorSpace = next.pendingAmbassadorSpace || null;
     if (next.configured && next.round === 1 && (next.agents?.shadow || 0) === 0) {
       next.shadowNeedsQuest = true;
     }
