@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>深水城领主单人自动机助手</title>
+  <link rel="stylesheet" href="./styles.css?v=20260528-setup-checklist-1">
+  <script src="./cards-data.js?v=20260528-quick-only-2"></script>
+  <script src="./app.js?v=20260528-quest-check-copy-1" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">深水城领主 · 暗影领主</p>
+        <h1>深水城领主单人自动机助手</h1>
+      </div>
+      <div class="top-actions">
+        <button class="ghost" id="saveBtn" type="button">保存</button>
+        <button class="danger" id="resetBtn" type="button">重开</button>
+      </div>
+    </header>
+
+    <main class="main-grid">
+      <section class="panel command-panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">当前指令</p>
+            <h2 id="stepTitle">准备开始</h2>
+          </div>
+          <span class="phase-pill" id="phasePill">开局</span>
+        </div>
+
+        <div class="state-strip" id="stateStrip"></div>
+
+        <div class="next-card" id="nextCard"></div>
+
+        <div class="button-row command-actions">
+          <button class="primary" id="nextBtn" type="button">下一步</button>
+        </div>
+      </section>
+
+      <section class="panel setup-panel" id="setupPanel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">开局</p>
+            <h2>开局配置</h2>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <label>
+            模组
+            <select id="moduleSelect">
+              <option value="base">基础版</option>
+              <option value="undermountain">地脉迷城</option>
+              <option value="skullport">骷髅港</option>
+            </select>
+          </label>
+          <label>
+            起始玩家标记
+            <select id="firstPlayerSelect">
+              <option value="shadow">暗影领主</option>
+              <option value="human">我</option>
+            </select>
+          </label>
+          <label class="checkbox-line">
+            <input id="longGameToggle" type="checkbox">
+            <span>扩展长局代理人数</span>
+          </label>
+          <label class="checkbox-line">
+            <input id="firstPlayToggle" type="checkbox">
+            <span>首次游玩此 Solo 变体</span>
+          </label>
+        </div>
+
+        <div class="setup-notes checklist">
+          <p class="setup-note-title">开局注意事项</p>
+          <label>
+            <input type="checkbox">
+            <span>每个轮次格预放 <span class="no-break">3 个 <img class="inline-icon" src="./assets/res-vp.png" alt="胜点"> 标记</span>；每轮开始把当前轮次格的 3 个标记移到建造者大厅的 3 张待购建筑上。</span>
+          </label>
+          <label><input type="checkbox"><span>建造者大厅翻 3 张建筑。</span></label>
+          <label><input type="checkbox"><span>崖望旅馆翻 4 张任务；双方各拿 2 张进行中任务。</span></label>
+          <label><input type="checkbox"><span>你拿 1 张领主卡和 2 张阴谋卡；暗影领主不拿领主卡，拿 2 张隐藏阴谋卡。</span></label>
+          <label><input type="checkbox"><span>暗影领主起始 4 金币；你作为第二玩家起始 5 金币。</span></label>
+          <label><input type="checkbox"><span>准备四面骰、十面骰，以及基础版十二面骰或扩展二十面骰。</span></label>
+        </div>
+
+        <div class="button-row">
+          <button class="primary" id="newGameBtn" type="button">按此配置开始</button>
+        </div>
+      </section>
+
+      <section class="panel board-panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">版图</p>
+            <h2>行动格占用</h2>
+          </div>
+          <button class="ghost" id="clearOccupiedBtn" type="button">清空本轮占用</button>
+        </div>
+        <div class="board-grid" id="boardGrid"></div>
+      </section>
+
+      <section class="panel table-panel exact-only" aria-hidden="true" hidden>
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">牌列</p>
+            <h2>崖望旅馆 / 建造者大厅</h2>
+          </div>
+        </div>
+        <div class="market-grid">
+          <div>
+            <h3>崖望旅馆任务</h3>
+            <div id="cliffwatchSlots" class="slot-stack"></div>
+          </div>
+          <div>
+            <h3>建造者大厅建筑</h3>
+            <div id="builderSlots" class="slot-stack"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel score-panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">终局</p>
+            <h2>终局计分表</h2>
+          </div>
+        </div>
+        <div id="finalScoreBox"></div>
+      </section>
+
+      <section class="panel log-panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">记录</p>
+            <h2>流程记录</h2>
+          </div>
+          <button class="ghost" id="clearLogBtn" type="button">清空</button>
+        </div>
+        <ol id="logList"></ol>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
