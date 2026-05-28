@@ -19,6 +19,7 @@ const advTypes = ["c", "f", "r", "w"];
 const targetNames = {
   cliffwatch: "崖望旅馆",
   advanced: "高级建筑",
+  custom: "高级建筑 / 临时行动",
   grinning: "笑狮酒馆",
   plinth: "尖碑塔",
   aurora: "极光领域商店",
@@ -115,6 +116,7 @@ const cardById = new Map(cards.map((card) => [card.id, card]));
 const targetArt = {
   cliffwatch: "art-cliffwatch.webp",
   advanced: "ui-building-card.webp",
+  custom: "ui-building-card.webp",
   grinning: "art-grinning.webp",
   plinth: "art-plinth.webp",
   aurora: "art-aurora.webp",
@@ -152,6 +154,8 @@ const boardImageAssets = Array.from(new Set([
   "icon-lieutenant.png",
 ]));
 
+const customActionSpaces = ["custom1", "custom2", "custom3"];
+
 const spaceDefs = {
   cliffA: { target: "cliffwatch", name: "崖望旅馆 A", detail: "拿 1 任务 + 2 金币", effects: ["quest", "g", "g"] },
   cliffB: { target: "cliffwatch", name: "崖望旅馆 B", detail: "拿 1 任务 + 1 阴谋", effects: ["quest", "intrigue"] },
@@ -172,6 +176,9 @@ const spaceDefs = {
   hallVoice: { target: "hallVoice", name: "声言之庭", detail: "任务、阴谋、5 金币、腐化", effects: ["quest", "intrigue", "g", "g", "g", "g", "g", "x"] },
   skullIsland: { target: "skullIsland", name: "骷髅岛", detail: "2 任意冒险者 + 腐化", effects: ["any", "any", "x"] },
   slaversMarket: { target: "slaversMarket", name: "奴隶市场", detail: "2 战士、2 盗贼、腐化", effects: ["f", "f", "r", "r", "x"] },
+  custom1: { target: "custom", name: "自定义行动 1", detail: "高级建筑、样品待购建筑或其他临时行动", effects: ["building"] },
+  custom2: { target: "custom", name: "自定义行动 2", detail: "高级建筑、样品待购建筑或其他临时行动", effects: ["building"] },
+  custom3: { target: "custom", name: "自定义行动 3", detail: "高级建筑、样品待购建筑或其他临时行动", effects: ["building"] },
 };
 
 const clockwiseOrder = [
@@ -723,7 +730,13 @@ function confirmShadowAction() {
   }
 
   if (pending.manualAdvanced) {
-    addLog("暗影领主指派到高级建筑。请按实体桌面选择建筑并执行牌面效果。");
+    const recordSpace = occupyManualActionSpace(pending.ambassadorAction ? "ambassador" : "shadow");
+    if (recordSpace) {
+      pending.spaceId = recordSpace;
+      addLog(`暗影领主指派到高级建筑。已用 ${displaySpaceName(recordSpace)} 记录占用；请按实体桌面选择建筑并执行牌面效果。`);
+    } else {
+      addLog("暗影领主指派到高级建筑。自定义行动占位已满，请按实体桌面选择建筑并记住该占用。");
+    }
     finishShadowAction(pending.harborReassign, { ambassadorAction: pending.ambassadorAction });
     render();
     return;
@@ -1315,6 +1328,7 @@ function renderNextCard() {
           `占用的高级建筑也参与计数。用 ${dicePill(10, pending.d10)} 数到对应建筑；若该建筑已占用，就沿同一顺序顺延到下一个未占用高级建筑。`,
           `如果所有已建成高级建筑都已占用，没有可用高级建筑，就重掷行动骰。`,
           `执行该建筑牌面；拥有者收益、费用和特殊效果都在实体桌面处理。`,
+          `${inlineEffect("building")} 确认后，应用会用版图底部的“高级建筑 / 临时行动”空位记录这次占用。`,
         ]
       : [
           `执行：${actionHintForSpaceHtml(pending.spaceId)}`,
@@ -1365,6 +1379,7 @@ function renderNextCard() {
       <h3>本轮开始前先指派大使</h3>
       ${guideList([
         "在版图上选择一个未占用行动格，放置大使并执行该行动。",
+        "如果大使去已建成高级建筑或其他临时行动，选择底部“高级建筑 / 临时行动”的一个空位。",
         "大使执行行动后，占用该行动格；它对所有玩家都算作对手代理人。",
         "如果把大使放到深水港，它不会在轮末重指派。",
         state.pendingAmbassadorSpace ? `已选择：${escapeHtml(displaySpaceName(state.pendingAmbassadorSpace))}。` : "当前可选行动格已经高亮。",
@@ -1379,6 +1394,7 @@ function renderNextCard() {
       <h3>指派 1 个代理人</h3>
       <ul>
         <li>在版图上选择一个高亮的未占用行动格，放置你的代理人并执行该行动。</li>
+        <li>如果你去已建成高级建筑，或用样品等效果指派到待购建筑，选择底部“高级建筑 / 临时行动”的一个空位。</li>
         <li>你可以完成 1 个任务；若去了深水港，稍后会进入港口重指派。</li>
         <li>${state.pendingHumanSpace ? `已选择：${escapeHtml(displaySpaceName(state.pendingHumanSpace))}。` : "选择行动格后，下方按钮才会继续。"}</li>
       </ul>
@@ -1432,7 +1448,7 @@ function renderHarborCard() {
   } else {
     els.nextCard.innerHTML = `
       <h3>你的 ${displaySpaceName(next.space)}</h3>
-      <p>在版图上选择一个非深水港的高亮空位，重指派该代理人，执行行动并最多完成 1 个任务。</p>
+      <p>在版图上选择一个非深水港的高亮空位，重指派该代理人，执行行动并最多完成 1 个任务。若去高级建筑或临时行动，使用底部占位格。</p>
       ${state.pendingHarborTarget ? `<p>已选择：${escapeHtml(displaySpaceName(state.pendingHarborTarget))}。</p>` : ""}
       <div class="button-row" style="margin-top:12px">
         <button class="primary" data-action="harbor-done" type="button" ${state.pendingHarborTarget ? "" : "disabled"}>该港口代理人已处理</button>
@@ -1476,6 +1492,7 @@ function boardDisplayItems() {
       boardSpaceItem("aurora"),
       boardGroupItem("harbor", "深水港", ["harbor1", "harbor2", "harbor3"], compactGroupOptions(["1", "2", "3"])),
       boardSpaceItem("builder"),
+      boardGroupItem("custom", "高级建筑 / 临时行动", customActionSpaces, { sharedTitle: true }),
     ];
   }
 
@@ -1495,6 +1512,7 @@ function boardDisplayItems() {
     }
     items.push(boardSpaceItem(spaceId));
   }
+  items.push(boardGroupItem("custom", "高级建筑 / 临时行动", customActionSpaces, { sharedTitle: true }));
   return items;
 }
 
@@ -2037,6 +2055,13 @@ function addHarbor(space, owner) {
   state.harborQueue.push({ space, owner });
 }
 
+function occupyManualActionSpace(owner) {
+  const space = customActionSpaces.find((spaceId) => !state.occupied[spaceId]);
+  if (!space) return null;
+  occupySpace(space, owner);
+  return space;
+}
+
 function resolveNextHarbor() {
   if (!state.harborQueue.length) {
     state.phase = "endRound";
@@ -2321,6 +2346,7 @@ function displaySpaceName(spaceId) {
 function actionHintForSpace(spaceId) {
   if (!spaceId) return "请手动判定";
   if (spaceId === "manualAdvanced") return "按实体桌面选择并执行高级建筑";
+  if (customActionSpaces.includes(spaceId)) return "占位：高级建筑、样品待购建筑或其他临时行动";
   if (spaceId.startsWith("adv_")) {
     const item = state.advanced[Number(spaceId.slice(4))];
     const card = item ? cardById.get(item.id) : null;
@@ -2412,8 +2438,8 @@ function inlineEffect(effect) {
 
 function artForSpace(spaceId) {
   if (!spaceId) return "icon-waterdeep.png";
-  if (spaceId === "manualAdvanced") return "ui-building-card.png";
-  if (spaceId.startsWith("adv_")) return "ui-building-card.png";
+  if (spaceId === "manualAdvanced") return "ui-building-card.webp";
+  if (spaceId.startsWith("adv_")) return "ui-building-card.webp";
   return targetArt[targetForSpace(spaceId)] || "icon-waterdeep.png";
 }
 
