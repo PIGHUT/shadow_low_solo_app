@@ -696,6 +696,10 @@ body.is-configured .main-grid {
   gap: 8px;
 }
 
+.board-grid.board-layout-base {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .space-group {
   background:
     linear-gradient(90deg, rgba(255, 250, 232, 0.92), rgba(240, 220, 171, 0.84)),
@@ -707,6 +711,27 @@ body.is-configured .main-grid {
   grid-column: 1 / -1;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   overflow: hidden;
+}
+
+.space-group.compact {
+  grid-column: auto;
+  grid-template-rows: 22px minmax(0, 1fr);
+  height: 86px;
+}
+
+.space-group-title {
+  align-items: center;
+  background: rgba(72, 49, 27, 0.1);
+  border-bottom: 1px solid rgba(94, 62, 30, 0.2);
+  color: #26190f;
+  display: flex;
+  font-size: 13px;
+  font-weight: 900;
+  grid-column: 1 / -1;
+  justify-content: center;
+  line-height: 1;
+  min-width: 0;
+  padding: 3px 6px;
 }
 
 .space-btn {
@@ -732,6 +757,49 @@ body.is-configured .main-grid {
   grid-template-columns: 50px minmax(0, 1fr);
   min-width: 0;
   padding: 8px;
+}
+
+.space-group.compact .space-btn {
+  gap: 3px;
+  grid-template-columns: 1fr;
+  height: auto;
+  min-height: 0;
+  padding: 4px 3px 5px;
+  text-align: center;
+}
+
+.space-group.compact .space-art-wrap {
+  display: none;
+}
+
+.space-group.compact .space-copy {
+  align-self: center;
+  gap: 3px;
+  justify-items: center;
+}
+
+.space-group.compact .space-copy strong {
+  font-size: 12px;
+}
+
+.space-group.compact .space-effects {
+  justify-content: center;
+  min-height: 20px;
+}
+
+.space-group.compact .space-effects img {
+  height: 19px;
+  width: 19px;
+}
+
+.space-group.compact .space-btn small {
+  font-size: 10px;
+}
+
+.space-btn.board-centered {
+  grid-column: 1 / -1;
+  justify-self: center;
+  width: calc((100% - 8px) / 2);
 }
 
 .space-group .space-btn + .space-btn {
@@ -1272,6 +1340,10 @@ body.is-configured .main-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 
+  .board-grid.board-layout-base {
+    grid-template-columns: 1fr;
+  }
+
   .add-card-row,
   .owner-toggle,
   .score-global {
@@ -1280,6 +1352,10 @@ body.is-configured .main-grid {
 
   .score-adventurers {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .space-btn.board-centered {
+    width: 100%;
   }
 
   .space-group .space-btn {

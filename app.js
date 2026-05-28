@@ -1334,51 +1334,90 @@ function renderHarborCard() {
 }
 
 function renderBoard() {
-  const spaces = currentOrder();
-  const orderKey = spaces.join("|");
+  const items = boardDisplayItems();
+  const orderKey = items.map((item) => item.key).join("|");
+  els.boardGrid.classList.toggle("board-layout-base", state.module === "base");
   if (els.boardGrid.dataset.orderKey === orderKey) {
     updateBoardOccupancy();
     return;
   }
 
-  const html = [];
-  for (let index = 0; index < spaces.length; index += 1) {
-    const spaceId = spaces[index];
-    if (spaceId === "cliffA") {
-      html.push(spaceGroupHtml("崖望旅馆", ["cliffA", "cliffB", "cliffC"]));
-      index += 2;
-      continue;
-    }
-    if (spaceId === "harbor1") {
-      html.push(spaceGroupHtml("深水港", ["harbor1", "harbor2", "harbor3"]));
-      index += 2;
-      continue;
-    }
-    html.push(spaceButtonHtml(spaceId));
-  }
+  const html = items.map((item) => {
+    if (item.type === "group") return spaceGroupHtml(item.label, item.spaces, item.options);
+    return spaceButtonHtml(item.space, item.className || "");
+  });
   els.boardGrid.innerHTML = html.join("");
   els.boardGrid.dataset.orderKey = orderKey;
   updateBoardOccupancy();
 }
 
-function spaceGroupHtml(label, spaces) {
+function boardDisplayItems() {
+  if (state.module === "base") {
+    return [
+      boardGroupItem("inn", "崖望旅馆", ["cliffA", "cliffB", "cliffC"], compactGroupOptions(["A", "B", "C"])),
+      boardSpaceItem("field"),
+      boardSpaceItem("grinning"),
+      boardSpaceItem("blackstaff"),
+      boardSpaceItem("plinth"),
+      boardSpaceItem("castle"),
+      boardSpaceItem("aurora"),
+      boardGroupItem("harbor", "深水港", ["harbor1", "harbor2", "harbor3"], compactGroupOptions(["1", "2", "3"])),
+      boardSpaceItem("builder", "board-centered"),
+    ];
+  }
+
+  const spaces = currentOrder();
+  const items = [];
+  for (let index = 0; index < spaces.length; index += 1) {
+    const spaceId = spaces[index];
+    if (spaceId === "cliffA") {
+      items.push(boardGroupItem("inn", "崖望旅馆", ["cliffA", "cliffB", "cliffC"]));
+      index += 2;
+      continue;
+    }
+    if (spaceId === "harbor1") {
+      items.push(boardGroupItem("harbor", "深水港", ["harbor1", "harbor2", "harbor3"], compactGroupOptions(["1", "2", "3"])));
+      index += 2;
+      continue;
+    }
+    items.push(boardSpaceItem(spaceId));
+  }
+  return items;
+}
+
+function boardSpaceItem(space, className = "") {
+  return { type: "space", key: `space:${space}:${className}`, space, className };
+}
+
+function boardGroupItem(key, label, spaces, options = {}) {
+  return { type: "group", key: `group:${key}:${spaces.join(",")}:${options.compact ? "compact" : "wide"}`, label, spaces, options };
+}
+
+function compactGroupOptions(segmentLabels) {
+  return { compact: true, sharedTitle: true, segmentLabels };
+}
+
+function spaceGroupHtml(label, spaces, options = {}) {
+  const classes = ["space-group", options.compact ? "compact" : "", options.sharedTitle ? "has-title" : ""].filter(Boolean).join(" ");
   return `
-    <div class="space-group" aria-label="${escapeHtml(label)}">
-      ${spaces.map((spaceId) => spaceButtonHtml(spaceId, "space-segment")).join("")}
+    <div class="${classes}" aria-label="${escapeHtml(label)}">
+      ${options.sharedTitle ? `<span class="space-group-title">${escapeHtml(label)}</span>` : ""}
+      ${spaces.map((spaceId, index) => spaceButtonHtml(spaceId, "space-segment", { label: options.segmentLabels?.[index] })).join("")}
     </div>
   `;
 }
 
-function spaceButtonHtml(spaceId, extraClass = "") {
+function spaceButtonHtml(spaceId, extraClass = "", options = {}) {
   const owner = state.occupied[spaceId];
   const cls = ["space-btn", extraClass, owner || ""].filter(Boolean).join(" ");
   const label = owner === "shadow" ? "暗影领主占用" : owner === "human" ? "我占用" : "空";
   const art = artForSpace(spaceId);
+  const name = options.label || displaySpaceName(spaceId);
   return `
     <button class="${cls}" data-action="space" data-space="${spaceId}" type="button">
       <span class="space-art-wrap"><img class="space-art" src="./assets/${art}" alt=""></span>
       <span class="space-copy">
-        <strong>${escapeHtml(displaySpaceName(spaceId))}</strong>
+        <strong>${escapeHtml(name)}</strong>
         ${spaceEffectHtml(spaceId)}
         <small>${label}</small>
       </span>
