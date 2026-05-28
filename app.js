@@ -131,6 +131,25 @@ const targetArt = {
   slaversMarket: "art-slavers-market.png",
 };
 
+const boardImageAssets = Array.from(new Set([
+  "ui-board-space.png",
+  "ui-building-card.png",
+  ...Object.values(targetArt),
+  "icon-arrow.png",
+  "icon-building.png",
+  "icon-first-player.png",
+  "icon-intrigue.png",
+  "icon-quest.png",
+  "res-any.png",
+  "res-cleric.png",
+  "res-corruption.png",
+  "res-fighter.png",
+  "res-gold.png",
+  "res-rogue.png",
+  "res-vp.png",
+  "res-wizard.png",
+]));
+
 const spaceDefs = {
   cliffA: { target: "cliffwatch", name: "崖望旅馆 A", detail: "拿 1 任务 + 2 金币", effects: ["quest", "g", "g"] },
   cliffB: { target: "cliffwatch", name: "崖望旅馆 B", detail: "拿 1 任务 + 1 阴谋", effects: ["quest", "intrigue"] },
@@ -279,6 +298,7 @@ const els = {
 
 fillCardOptions();
 bindEvents();
+preloadAssets(boardImageAssets);
 render();
 
 function defaultState() {
@@ -1018,7 +1038,12 @@ function handleAction(action, target) {
   }
   if (action === "space") {
     toggleSpace(target.dataset.space);
-    render();
+    if (state.phase === "harbor") render();
+    else {
+      renderBoard();
+      saveState();
+    }
+    return;
   }
   if (action === "resource") {
     adjustShadow(target.dataset.resource, Number(target.dataset.delta));
@@ -1675,6 +1700,15 @@ function fillCardOptions() {
   els.questOptions.innerHTML = quests
     .map((card) => `<option value="${escapeHtml(labelForCard(card))}"></option>`)
     .join("");
+}
+
+function preloadAssets(files) {
+  if (typeof Image === "undefined") return;
+  files.forEach((file) => {
+    const image = new Image();
+    image.decoding = "async";
+    image.src = `./assets/${file}`;
+  });
 }
 
 function addQuestFromSearch() {
