@@ -1354,7 +1354,7 @@ function renderBoard() {
 function boardDisplayItems() {
   if (state.module === "base") {
     return [
-      boardGroupItem("inn", "崖望旅馆", ["cliffA", "cliffB", "cliffC"], compactGroupOptions(["A", "B", "C"])),
+      boardGroupItem("inn", "崖望旅馆", ["cliffA", "cliffB", "cliffC"]),
       boardSpaceItem("field"),
       boardSpaceItem("grinning"),
       boardSpaceItem("blackstaff"),
@@ -1362,7 +1362,7 @@ function boardDisplayItems() {
       boardSpaceItem("castle"),
       boardSpaceItem("aurora"),
       boardGroupItem("harbor", "深水港", ["harbor1", "harbor2", "harbor3"], compactGroupOptions(["1", "2", "3"])),
-      boardSpaceItem("builder", "board-centered"),
+      boardSpaceItem("builder"),
     ];
   }
 
