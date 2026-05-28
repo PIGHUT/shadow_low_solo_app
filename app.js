@@ -282,7 +282,7 @@ function defaultState() {
     decisionMode: "quick",
     longGame: false,
     firstPlay: false,
-    shadowNeedsQuest: false,
+    shadowNeedsQuest: true,
     round: 1,
     phase: "setup",
     firstPlayer: "shadow",
@@ -437,8 +437,9 @@ function startGame() {
   next.longGame = els.longGameToggle.checked;
   next.firstPlay = els.firstPlayToggle.checked;
   next.phase = "startRound";
+  next.shadowNeedsQuest = true;
   state = next;
-  addLog(`开局：${moduleName(state.module)}。按实体桌面完成资源、任务和建筑设置后，从第 1 轮开始。`);
+  addLog(`开局：${moduleName(state.module)}。暗影领主开局没有进行中任务；它的第一次指派会优先去崖望旅馆。`);
   render();
 }
 
@@ -516,9 +517,9 @@ function continueAfterTurnTransition() {
     return;
   }
   if (state.phase === "harbor" && !state.pending) {
-    const nextHarbor = state.harborQueue.slice().sort((a, b) => harborOrder(a.space) - harborOrder(b.space))[0];
+    const nextHarbor = nextHarborEntry();
     if (nextHarbor?.owner === "shadow") {
-      planShadowAction({ harborReassign: true });
+      planShadowAction({ harborReassign: true, sourceHarbor: nextHarbor.space });
       return;
     }
   }
@@ -571,6 +572,7 @@ function planShadowAction(options = {}) {
   state.pending = {
     kind: "shadowAction",
     harborReassign,
+    sourceHarbor: options.sourceHarbor || (harborReassign ? nextHarborEntry()?.space : null),
     forcedCliff,
     tableDie: table.die,
     roll,
@@ -638,7 +640,7 @@ function confirmShadowAction() {
   occupySpace(pending.spaceId, "shadow");
   const decision = applyShadowLocation(pending.spaceId);
   if (decision) {
-    state.pending = { ...decision, harborReassign: pending.harborReassign };
+    state.pending = { ...decision, harborReassign: pending.harborReassign, sourceHarbor: pending.sourceHarbor };
     render();
     return;
   }
@@ -650,7 +652,7 @@ function finishShadowAction(harborReassign) {
   if (!harborReassign) {
     state.agents.shadow = Math.min(totalAgentsThisRound(), state.agents.shadow + 1);
   } else {
-    state.harborQueue.shift();
+    completeHarborReassign(state.pending?.sourceHarbor);
   }
   state.pending = { kind: "shadowQuestCheck", harborReassign };
   addLog("暗影领主行动结束：进入回合末任务检查。");
@@ -696,6 +698,7 @@ function applyShadowLocation(spaceId) {
   if (target === "harbor") {
     addLog("暗影领主洗自己的隐藏阴谋堆并翻 1 张执行；若两种效果都无法结算，将其洗回并给暗影领主 5 胜点。");
     addHarbor(spaceId, "shadow");
+    addLog("已加入深水港重指派队列；本轮普通代理人全部行动后，会按港口编号补一次非深水港行动。");
   }
   if (target === "builder") {
     return { kind: "quickBuilder", source: "建造者大厅" };
@@ -965,9 +968,16 @@ function completeShadowQuest(result) {
 
 function handleAction(action, target) {
   if (action === "confirm-shadow") confirmShadowAction();
-  if (action === "reroll-shadow") planShadowAction({ harborReassign: Boolean(state.pending?.harborReassign) });
+  if (action === "reroll-shadow") planShadowAction({
+    harborReassign: Boolean(state.pending?.harborReassign),
+    sourceHarbor: state.pending?.sourceHarbor,
+  });
   if (action === "force-cliffwatch") {
-    planShadowAction({ forcedTarget: "cliffwatch" });
+    planShadowAction({
+      forcedTarget: "cliffwatch",
+      harborReassign: Boolean(state.pending?.harborReassign),
+      sourceHarbor: state.pending?.sourceHarbor,
+    });
   }
   if (action === "quick-quest-done") {
     state.shadowNeedsQuest = false;
@@ -1027,16 +1037,18 @@ function handleAction(action, target) {
     render();
   }
   if (action === "harbor-done") {
-    state.harborQueue.shift();
+    completeHarborReassign(nextHarborEntry()?.space);
     state.phase = state.harborQueue.length ? "harbor" : "endRound";
     continueAfterTurnTransition();
   }
   if (action === "harbor-shadow") {
-    planShadowAction({ harborReassign: true });
+    const nextHarbor = nextHarborEntry();
+    planShadowAction({ harborReassign: true, sourceHarbor: nextHarbor?.space });
   }
 }
 
 function render() {
+  document.body.classList.toggle("is-configured", Boolean(state.configured));
   state.decisionMode = "quick";
   els.moduleSelect.value = state.module;
   els.firstPlayerSelect.value = state.firstPlayer;
@@ -1068,7 +1080,7 @@ function primaryActionConfig() {
   if (state.phase === "shadowTurn") return { label: "判定行动" };
   if (state.phase === "humanTurn") return { label: "我的回合完成" };
   if (state.phase === "harbor") {
-    const nextHarbor = state.harborQueue.slice().sort((a, b) => harborOrder(a.space) - harborOrder(b.space))[0];
+    const nextHarbor = nextHarborEntry();
     if (nextHarbor?.owner === "shadow") return { label: "判定重指派" };
     if (nextHarbor?.owner === "human") return { label: "请处理上方港口代理人", disabled: true };
     return { label: "继续" };
@@ -1265,8 +1277,7 @@ function renderNextCard() {
 
 function renderHarborCard() {
   els.stepTitle.textContent = "深水港重指派";
-  state.harborQueue.sort((a, b) => harborOrder(a.space) - harborOrder(b.space));
-  const next = state.harborQueue[0];
+  const next = nextHarborEntry();
   if (!next) {
     state.phase = "endRound";
     renderNextCard();
@@ -1665,8 +1676,12 @@ function recommendBuilderPurchase() {
 }
 
 function addHarbor(space, owner) {
-  const exists = state.harborQueue.some((item) => item.space === space);
-  if (!exists) state.harborQueue.push({ space, owner });
+  const existing = state.harborQueue.find((item) => item.space === space);
+  if (existing) {
+    existing.owner = owner;
+    return;
+  }
+  state.harborQueue.push({ space, owner });
 }
 
 function resolveNextHarbor() {
@@ -1675,8 +1690,22 @@ function resolveNextHarbor() {
     render();
     return;
   }
-  const next = state.harborQueue.sort((a, b) => harborOrder(a.space) - harborOrder(b.space))[0];
-  if (next.owner === "shadow") planShadowAction({ harborReassign: true });
+  const next = nextHarborEntry();
+  if (next?.owner === "shadow") planShadowAction({ harborReassign: true, sourceHarbor: next.space });
+  else render();
+}
+
+function nextHarborEntry() {
+  state.harborQueue.sort((a, b) => harborOrder(a.space) - harborOrder(b.space));
+  return state.harborQueue[0] || null;
+}
+
+function completeHarborReassign(space) {
+  const entry = space ? state.harborQueue.find((item) => item.space === space) : nextHarborEntry();
+  const completedSpace = entry?.space;
+  if (!completedSpace) return;
+  state.harborQueue = state.harborQueue.filter((item) => item.space !== completedSpace);
+  delete state.occupied[completedSpace];
 }
 
 function toggleSpace(spaceId) {
@@ -2140,6 +2169,9 @@ function loadState() {
     if (!parsed || typeof parsed !== "object") return null;
     const next = { ...defaultState(), ...parsed, decisionMode: "quick" };
     next.finalScore = normalizeFinalScore(next.finalScore);
+    if (next.configured && next.round === 1 && (next.agents?.shadow || 0) === 0) {
+      next.shadowNeedsQuest = true;
+    }
     return next;
   } catch {
     return null;

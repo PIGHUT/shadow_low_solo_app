@@ -175,10 +175,41 @@ h3 {
 
 .main-grid {
   display: grid;
-  grid-template-columns: minmax(430px, 1.22fr) minmax(330px, 0.78fr);
+  grid-template-areas:
+    "command board"
+    "setup board"
+    "score log";
+  grid-template-columns: minmax(410px, 0.95fr) minmax(440px, 1.05fr);
   gap: 14px;
   align-items: start;
   margin-top: 14px;
+}
+
+.command-panel {
+  grid-area: command;
+}
+
+.setup-panel {
+  grid-area: setup;
+}
+
+.board-panel {
+  grid-area: board;
+}
+
+.score-panel {
+  grid-area: score;
+}
+
+.log-panel {
+  grid-area: log;
+}
+
+body.is-configured .main-grid {
+  grid-template-areas:
+    "command board"
+    "log board"
+    "score score";
 }
 
 .panel {
@@ -660,7 +691,7 @@ h3 {
 
 .board-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 8px;
 }
 
@@ -1126,9 +1157,46 @@ h3 {
 .token.v { background: var(--green); }
 .token.x { background: var(--mahogany); }
 
+@media (min-width: 1280px) {
+  .main-grid {
+    grid-template-areas:
+      "command board score"
+      "setup board log";
+    grid-template-columns: minmax(330px, 0.78fr) minmax(520px, 1.24fr) minmax(330px, 0.78fr);
+  }
+
+  body.is-configured .main-grid {
+    grid-template-areas:
+      "command board score"
+      "log board score";
+  }
+
+  .board-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .score-panel .score-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 980px) {
   .main-grid {
+    grid-template-areas:
+      "command"
+      "setup"
+      "board"
+      "score"
+      "log";
     grid-template-columns: 1fr;
+  }
+
+  body.is-configured .main-grid {
+    grid-template-areas:
+      "command"
+      "board"
+      "score"
+      "log";
   }
 
   .topbar {
