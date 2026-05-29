@@ -250,6 +250,56 @@ body.is-configured .main-grid {
   margin-bottom: 14px;
 }
 
+.board-tools {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  justify-content: flex-end;
+}
+
+.lock-button {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+}
+
+.lock-mark {
+  display: inline-block;
+  height: 15px;
+  position: relative;
+  width: 14px;
+}
+
+.lock-mark::before {
+  border: 2px solid currentColor;
+  border-bottom: 0;
+  border-radius: 7px 7px 0 0;
+  content: "";
+  height: 8px;
+  left: 3px;
+  position: absolute;
+  top: 0;
+  width: 8px;
+}
+
+.lock-mark::after {
+  background: currentColor;
+  border-radius: 3px;
+  bottom: 0;
+  content: "";
+  height: 9px;
+  left: 1px;
+  position: absolute;
+  width: 12px;
+}
+
+.lock-button.secondary .lock-mark::before {
+  left: 6px;
+  transform: rotate(20deg);
+  transform-origin: left bottom;
+}
+
 .phase-pill,
 .chip {
   border-radius: 999px;
@@ -759,6 +809,7 @@ body.is-configured .main-grid {
   height: 86px;
   justify-items: stretch;
   padding: 9px;
+  position: relative;
   text-align: left;
 }
 
@@ -1003,6 +1054,44 @@ body.is-configured .main-grid {
   filter: brightness(1.03);
 }
 
+.board-grid.free-edit .space-btn.placeable {
+  box-shadow:
+    inset 0 0 0 2px rgba(128, 74, 38, 0.46),
+    0 8px 18px rgba(95, 63, 31, 0.12);
+}
+
+.co-badge {
+  background: rgba(47, 33, 24, 0.82);
+  border: 1px solid rgba(255, 249, 230, 0.52);
+  border-radius: 999px;
+  color: #fff8e6;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+  padding: 4px 6px;
+  position: absolute;
+  right: 5px;
+  top: 5px;
+  white-space: nowrap;
+  z-index: 2;
+}
+
+.co-badge[hidden] {
+  display: none;
+}
+
+.space-btn.co-human .co-badge {
+  background: rgba(33, 100, 94, 0.88);
+}
+
+.space-btn.co-shadow .co-badge {
+  background: rgba(132, 61, 38, 0.9);
+}
+
+.space-btn.co-ambassador .co-badge {
+  background: rgba(87, 67, 118, 0.9);
+}
+
 .special-agent-tools {
   align-items: center;
   background: rgba(255, 250, 232, 0.62);
@@ -1098,6 +1187,14 @@ body.is-configured .main-grid {
 }
 
 .special-adjust-panel {
+  border-top: 1px solid rgba(94, 62, 30, 0.18);
+  display: grid;
+  flex-basis: 100%;
+  gap: 8px;
+  padding-top: 9px;
+}
+
+.free-edit-panel {
   border-top: 1px solid rgba(94, 62, 30, 0.18);
   display: grid;
   flex-basis: 100%;

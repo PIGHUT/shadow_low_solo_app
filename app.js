@@ -333,6 +333,7 @@ const els = {
   longGameToggle: document.getElementById("longGameToggle"),
   firstPlayToggle: document.getElementById("firstPlayToggle"),
   boardGrid: document.getElementById("boardGrid"),
+  boardLockBtn: document.getElementById("boardLockBtn"),
   specialAgentTools: document.getElementById("specialAgentTools"),
   shadowResources: document.getElementById("shadowResources"),
   activeQuestList: document.getElementById("activeQuestList"),
@@ -365,6 +366,9 @@ function defaultState() {
     currentTurn: "shadow",
     agents: { shadow: 0, human: 0 },
     occupied: {},
+    coOccupied: {},
+    boardUnlocked: false,
+    freeEditMode: "cycle",
     harborQueue: [],
     pendingHumanSpace: null,
     pendingHarborTarget: null,
@@ -444,6 +448,19 @@ function normalizePlayer(owner) {
   return ["human", "shadow"].includes(owner) ? owner : "shadow";
 }
 
+function normalizeCoOccupied(coOccupied) {
+  const normalized = {};
+  Object.entries(coOccupied || {}).forEach(([spaceId, owner]) => {
+    const occupant = normalizeOccupantOwner(owner);
+    if (spaceId && occupant) normalized[spaceId] = occupant;
+  });
+  return normalized;
+}
+
+function normalizeFreeEditMode(mode) {
+  return ["cycle", "coHuman", "coShadow", "coAmbassador", "clearCo"].includes(mode) ? mode : "cycle";
+}
+
 function makeCorruptionTrack() {
   return { "-1": 1, "-2": 3, "-3": 3, "-4": 3, "-5": 3, "-6": 3, "-7": 3, "-8": 3, "-9": 3 };
 }
@@ -456,8 +473,10 @@ function bindEvents() {
     addLog("已保存当前局面。");
   });
   onClick("nextBtn", nextStep);
+  onClick("boardLockBtn", toggleBoardUnlocked);
   onClick("clearOccupiedBtn", () => {
     state.occupied = {};
+    state.coOccupied = {};
     state.harborQueue = [];
     state.pendingHumanSpace = null;
     state.pendingHarborTarget = null;
@@ -707,12 +726,15 @@ function finishRound() {
   state.phase = "startRound";
   state.pending = null;
   state.occupied = {};
+  state.coOccupied = {};
   state.harborQueue = [];
   state.pendingHumanSpace = null;
   state.pendingHarborTarget = null;
   state.pendingAmbassadorSpace = null;
   state.special.ambassadorSpace = null;
   state.specialAdjust = false;
+  state.boardUnlocked = false;
+  state.freeEditMode = "cycle";
   state.specialPlaceOwner = null;
   state.pendingSpecialMove = null;
   state.agents = { shadow: 0, human: 0 };
@@ -1224,6 +1246,9 @@ function handleAction(action, target) {
   if (action === "toggle-special-adjust") {
     toggleSpecialAdjust();
   }
+  if (action === "set-free-edit-mode") {
+    setFreeEditMode(target.dataset.mode);
+  }
   if (action === "set-special-place-owner") {
     setSpecialPlaceOwner(target.dataset.owner);
   }
@@ -1264,7 +1289,9 @@ function handleAction(action, target) {
     const index = Number(target.dataset.index);
     state.advanced.splice(index, 1);
     delete state.occupied[`adv_${index}`];
+    delete state.coOccupied[`adv_${index}`];
     state.occupied = renumberAdvancedOccupancy(state.occupied);
+    state.coOccupied = renumberAdvancedOccupancy(state.coOccupied);
     render();
   }
   if (action === "harbor-done") {
@@ -1292,6 +1319,9 @@ function render() {
   document.body.classList.toggle("is-configured", Boolean(state.configured));
   state.decisionMode = "quick";
   state.customSlotCount = normalizeCustomSlotCount(state.customSlotCount, state.occupied);
+  state.coOccupied = normalizeCoOccupied(state.coOccupied);
+  state.boardUnlocked = Boolean(state.boardUnlocked);
+  state.freeEditMode = normalizeFreeEditMode(state.freeEditMode);
   state.customSlotNames = normalizeCustomSlotNames(state.customSlotNames);
   if (!isCustomActionSpace(state.editingCustomName)) state.editingCustomName = null;
   state.specialPlaceOwner = normalizeOccupantOwner(state.specialPlaceOwner);
@@ -1305,6 +1335,7 @@ function render() {
   renderStateStrip();
   renderNextCard();
   renderPrimaryAction();
+  renderBoardLock();
   renderBoard();
   renderSpecialAgentTools();
   renderFinalScore();
@@ -1316,6 +1347,15 @@ function renderPrimaryAction() {
   const config = primaryActionConfig();
   els.nextBtn.textContent = config.label;
   els.nextBtn.disabled = Boolean(config.disabled);
+}
+
+function renderBoardLock() {
+  if (!els.boardLockBtn) return;
+  els.boardLockBtn.classList.toggle("secondary", state.boardUnlocked);
+  els.boardLockBtn.classList.toggle("ghost", !state.boardUnlocked);
+  els.boardLockBtn.setAttribute("aria-label", state.boardUnlocked ? "锁定行动格编辑" : "解锁行动格编辑");
+  const text = els.boardLockBtn.querySelector(".lock-text");
+  if (text) text.textContent = state.boardUnlocked ? "已解锁" : "锁定";
 }
 
 function primaryActionConfig() {
@@ -1586,6 +1626,7 @@ function renderBoard() {
   const items = boardDisplayItems();
   const orderKey = items.map((item) => item.key).join("|");
   els.boardGrid.classList.toggle("board-layout-base", state.module === "base");
+  els.boardGrid.classList.toggle("free-edit", state.boardUnlocked);
   if (els.boardGrid.dataset.orderKey === orderKey) {
     updateBoardOccupancy();
     return;
@@ -1686,6 +1727,7 @@ function spaceButtonHtml(spaceId, extraClass = "", options = {}) {
         ${spaceEffectHtml(spaceId)}
         <small>${label}</small>
       </span>
+      <span class="co-badge" aria-hidden="true"></span>
     </button>
   `;
 }
@@ -1694,12 +1736,21 @@ function updateBoardOccupancy() {
   els.boardGrid.querySelectorAll("[data-space]").forEach((button) => {
     const spaceId = button.dataset.space;
     const owner = state.occupied[spaceId];
+    const coOwner = state.coOccupied?.[spaceId];
     button.classList.toggle("human", owner === "human");
     button.classList.toggle("shadow", owner === "shadow");
     button.classList.toggle("ambassador", owner === "ambassador");
+    button.classList.toggle("co-human", coOwner === "human");
+    button.classList.toggle("co-shadow", coOwner === "shadow");
+    button.classList.toggle("co-ambassador", coOwner === "ambassador");
     const label = ownerLabel(owner);
     const status = button.querySelector("small");
     if (status) status.textContent = label;
+    const badge = button.querySelector(".co-badge");
+    if (badge) {
+      badge.hidden = !coOwner;
+      badge.textContent = coOwner ? `共占 ${coOwnerText(coOwner)}` : "";
+    }
   });
   updateBoardInteractivity();
 }
@@ -1736,8 +1787,30 @@ function renderSpecialAgentTools() {
       <button class="${state.specialAdjust ? "secondary" : "ghost"} tiny" data-action="toggle-special-adjust" type="button">${state.specialAdjust ? "结束特殊调整" : "特殊调整"}</button>
       <button class="ghost tiny" data-action="add-custom-slot" type="button" aria-label="添加高级建筑">添加</button>
     </div>
+    ${state.boardUnlocked ? freeEditPanelHtml() : ""}
     ${state.specialAdjust ? specialAdjustPanelHtml() : ""}
   `;
+}
+
+function freeEditPanelHtml() {
+  const mode = state.freeEditMode;
+  return `
+    <div class="free-edit-panel">
+      <div class="adjust-toolbar" role="group" aria-label="自由编辑模式">
+        <span>自由编辑</span>
+        ${freeEditButton("cycle", "占用", mode)}
+        ${freeEditButton("coHuman", "共占我", mode)}
+        ${freeEditButton("coShadow", "共占AI", mode)}
+        ${freeEditButton("coAmbassador", "共占大使", mode)}
+        ${freeEditButton("clearCo", "清共占", mode)}
+      </div>
+      <p class="adjust-hint">占用：空 -> 我 -> 暗影领主 -> 大使 -> 空。共占只加角标。</p>
+    </div>
+  `;
+}
+
+function freeEditButton(mode, label, current) {
+  return `<button class="${mode === current ? "secondary" : "ghost"} tiny" data-action="set-free-edit-mode" data-mode="${mode}" type="button">${label}</button>`;
 }
 
 function specialAdjustPanelHtml() {
@@ -2313,6 +2386,7 @@ function completeHarborReassign(space) {
   if (!completedSpace) return;
   state.harborQueue = state.harborQueue.filter((item) => item.space !== completedSpace);
   delete state.occupied[completedSpace];
+  delete state.coOccupied[completedSpace];
 }
 
 function handleSpaceSelection(spaceId) {
@@ -2320,6 +2394,7 @@ function handleSpaceSelection(spaceId) {
   if (!mode || !canSelectSpace(spaceId, mode)) return;
   if (mode.kind === "specialMove") moveAgentToSpace(spaceId);
   if (mode.kind === "specialPlace") placeSpecialAgent(spaceId, mode.owner);
+  if (mode.kind === "freeEdit") freeEditSpace(spaceId);
   if (mode.kind === "human") selectHumanSpace(spaceId);
   if (mode.kind === "harbor") selectHumanHarborReassign(spaceId);
   if (mode.kind === "ambassador") selectAmbassadorSpace(spaceId);
@@ -2332,6 +2407,7 @@ function boardPlacementMode() {
     const owner = normalizeOccupantOwner(state.specialPlaceOwner);
     if (owner) return { kind: "specialPlace", owner };
   }
+  if (state.boardUnlocked) return { kind: "freeEdit" };
   if (state.phase === "humanTurn") return { kind: "human" };
   if (state.phase === "ambassador") return { kind: "ambassador" };
   if (state.phase === "harbor") {
@@ -2346,10 +2422,73 @@ function canSelectSpace(spaceId, mode = boardPlacementMode()) {
   const owner = state.occupied[spaceId];
   if (mode.kind === "specialMove") return spaceId !== mode.from && !owner;
   if (mode.kind === "specialPlace") return !owner;
+  if (mode.kind === "freeEdit") return true;
   if (mode.kind === "human") return !owner || state.pendingHumanSpace === spaceId;
   if (mode.kind === "harbor") return targetForSpace(spaceId) !== "harbor" && (!owner || state.pendingHarborTarget === spaceId);
   if (mode.kind === "ambassador") return !owner || state.pendingAmbassadorSpace === spaceId;
   return false;
+}
+
+function toggleBoardUnlocked() {
+  state.boardUnlocked = !state.boardUnlocked;
+  state.pendingSpecialMove = null;
+  state.specialPlaceOwner = null;
+  if (!state.boardUnlocked) state.freeEditMode = "cycle";
+  addLog(state.boardUnlocked ? "行动格已解锁：可自由编辑。" : "行动格已锁定。");
+  render();
+}
+
+function setFreeEditMode(mode) {
+  state.freeEditMode = normalizeFreeEditMode(mode);
+  render();
+}
+
+function freeEditSpace(spaceId) {
+  const mode = normalizeFreeEditMode(state.freeEditMode);
+  if (mode === "coHuman") setCoOccupant(spaceId, "human");
+  else if (mode === "coShadow") setCoOccupant(spaceId, "shadow");
+  else if (mode === "coAmbassador") setCoOccupant(spaceId, "ambassador");
+  else if (mode === "clearCo") clearCoOccupant(spaceId);
+  else cycleSpaceOwner(spaceId);
+  renderBoard();
+  renderSpecialAgentTools();
+  saveState();
+}
+
+function cycleSpaceOwner(spaceId) {
+  const current = normalizeOccupantOwner(state.occupied?.[spaceId]);
+  const next = current === "human" ? "shadow" : current === "shadow" ? "ambassador" : current === "ambassador" ? null : "human";
+  setManualSpaceOwner(spaceId, next);
+}
+
+function setManualSpaceOwner(spaceId, owner) {
+  const normalized = normalizeOccupantOwner(owner);
+  if (!spaceId) return;
+  if (!normalized) {
+    releaseOccupiedSpace(spaceId, { returnToPool: false });
+    delete state.coOccupied[spaceId];
+    return;
+  }
+  state.occupied[spaceId] = normalized;
+  if (state.coOccupied[spaceId] === normalized) delete state.coOccupied[spaceId];
+  if (targetForSpace(spaceId) === "harbor" && normalized !== "ambassador") addHarbor(spaceId, normalized);
+  else state.harborQueue = state.harborQueue.filter((item) => item.space !== spaceId);
+  if (normalized === "ambassador") state.special.ambassadorSpace = spaceId;
+}
+
+function setCoOccupant(spaceId, owner) {
+  const normalized = normalizeOccupantOwner(owner);
+  if (!spaceId || !normalized) return;
+  if (state.occupied?.[spaceId] === normalized) {
+    delete state.coOccupied[spaceId];
+    return;
+  }
+  if (state.coOccupied[spaceId] === normalized) delete state.coOccupied[spaceId];
+  else state.coOccupied[spaceId] = normalized;
+}
+
+function clearCoOccupant(spaceId) {
+  if (spaceId) delete state.coOccupied[spaceId];
 }
 
 function toggleSpecialAdjust() {
@@ -2422,6 +2561,7 @@ function releaseOccupiedSpace(spaceId, options = {}) {
   const pendingHarborTarget = state.pendingHarborTarget === spaceId;
   const pendingAmbassador = state.pendingAmbassadorSpace === spaceId;
   delete state.occupied[spaceId];
+  delete state.coOccupied[spaceId];
   state.harborQueue = state.harborQueue.filter((item) => item.space !== spaceId);
   if (pendingHuman) state.pendingHumanSpace = null;
   if (pendingHarborTarget) state.pendingHarborTarget = null;
@@ -2800,6 +2940,13 @@ function ownerShortLabel(owner) {
   return "代理人";
 }
 
+function coOwnerText(owner) {
+  if (owner === "human") return "我";
+  if (owner === "shadow") return "暗影领主";
+  if (owner === "ambassador") return "大使";
+  return "特殊";
+}
+
 function harborOrder(spaceId) {
   return { harbor1: 1, harbor2: 2, harbor3: 3 }[spaceId] || 99;
 }
@@ -3024,6 +3171,9 @@ function loadState() {
     next.pendingHumanSpace = next.pendingHumanSpace || null;
     next.pendingHarborTarget = next.pendingHarborTarget || null;
     next.pendingAmbassadorSpace = next.pendingAmbassadorSpace || null;
+    next.coOccupied = normalizeCoOccupied(next.coOccupied);
+    next.boardUnlocked = Boolean(next.boardUnlocked);
+    next.freeEditMode = normalizeFreeEditMode(next.freeEditMode);
     next.customSlotNames = normalizeCustomSlotNames(next.customSlotNames);
     next.editingCustomName = isCustomActionSpace(next.editingCustomName) ? next.editingCustomName : null;
     if (!parsed.customSlotNames && !hasOccupiedCustomSlot(next.occupied)) {
