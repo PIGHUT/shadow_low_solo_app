@@ -193,6 +193,10 @@ function customNamesSignature() {
   return customActionSpaces().map((spaceId) => `${spaceId}:${names[spaceId] || ""}`).join("|");
 }
 
+function advancedGroupSignature() {
+  return `${customNamesSignature()}::edit=${state?.editingCustomName || ""}`;
+}
+
 const spaceDefs = {
   cliffA: { target: "cliffwatch", name: "崖望旅馆 A", detail: "拿 1 任务 + 2 金币", effects: ["quest", "g", "g"] },
   cliffB: { target: "cliffwatch", name: "崖望旅馆 B", detail: "拿 1 任务 + 1 阴谋", effects: ["quest", "intrigue"] },
@@ -368,6 +372,7 @@ function defaultState() {
     pending: null,
     customSlotCount: MIN_CUSTOM_ACTION_SLOTS,
     customSlotNames: {},
+    editingCustomName: null,
     specialAdjust: false,
     specialPlaceOwner: null,
     pendingSpecialMove: null,
@@ -475,10 +480,24 @@ function bindEvents() {
     handleAction(action, target);
   });
 
+  document.addEventListener("keydown", (event) => {
+    const target = event.target;
+    if (!target?.dataset?.customName) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      setCustomSlotName(target.dataset.customName, target.value, true, true);
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      state.editingCustomName = null;
+      render();
+    }
+  });
+
   document.addEventListener("change", (event) => {
     const target = event.target;
     if (target.dataset.customName) {
-      setCustomSlotName(target.dataset.customName, target.value, true);
+      setCustomSlotName(target.dataset.customName, target.value, true, true);
       return;
     }
     if (target.dataset.cliffSlot) {
@@ -1199,6 +1218,9 @@ function handleAction(action, target) {
   if (action === "add-custom-slot") {
     addCustomSlot();
   }
+  if (action === "edit-custom-name") {
+    startCustomNameEdit(target.dataset.editSpace);
+  }
   if (action === "toggle-special-adjust") {
     toggleSpecialAdjust();
   }
@@ -1271,6 +1293,7 @@ function render() {
   state.decisionMode = "quick";
   state.customSlotCount = normalizeCustomSlotCount(state.customSlotCount, state.occupied);
   state.customSlotNames = normalizeCustomSlotNames(state.customSlotNames);
+  if (!isCustomActionSpace(state.editingCustomName)) state.editingCustomName = null;
   state.specialPlaceOwner = normalizeOccupantOwner(state.specialPlaceOwner);
   state.pendingSpecialMove = normalizePendingSpecialMove(state.pendingSpecialMove);
   els.moduleSelect.value = state.module;
@@ -1592,7 +1615,7 @@ function boardDisplayItems() {
       boardSpaceItem("aurora"),
       boardGroupItem("harbor", "深水港", ["harbor1", "harbor2", "harbor3"], compactGroupOptions(["1", "2", "3"])),
       boardSpaceItem("builder"),
-      boardGroupItem("custom", "高级建筑", customActionSpaces(), { sharedTitle: true, custom: true, keySuffix: customNamesSignature() }),
+      boardGroupItem("custom", "高级建筑", customActionSpaces(), { sharedTitle: true, custom: true, keySuffix: advancedGroupSignature() }),
     ];
   }
 
@@ -1612,7 +1635,7 @@ function boardDisplayItems() {
     }
     items.push(boardSpaceItem(spaceId));
   }
-  items.push(boardGroupItem("custom", "高级建筑", customActionSpaces(), { sharedTitle: true, custom: true, keySuffix: customNamesSignature() }));
+  items.push(boardGroupItem("custom", "高级建筑", customActionSpaces(), { sharedTitle: true, custom: true, keySuffix: advancedGroupSignature() }));
   return items;
 }
 
@@ -1640,13 +1663,14 @@ function spaceGroupHtml(label, spaces, options = {}) {
 }
 
 function advancedBuildingSlotHtml(spaceId) {
+  const isEditing = state.editingCustomName === spaceId;
+  const name = customSlotName(spaceId);
   return `
     <div class="advanced-slot-wrap">
-      ${spaceButtonHtml(spaceId, "space-segment")}
-      <label class="advanced-name-field">
-        <span>建筑名字</span>
-        <input data-custom-name="${spaceId}" value="${escapeHtml(customSlotNames()[spaceId] || "")}" placeholder="${escapeHtml(customSlotName(spaceId))}">
-      </label>
+      ${isEditing
+        ? `<input class="advanced-title-input" data-custom-name="${spaceId}" value="${escapeHtml(customSlotNames()[spaceId] || "")}" placeholder="${escapeHtml(name)}" aria-label="建筑名字">`
+        : `<button class="advanced-title-button" data-action="edit-custom-name" data-edit-space="${spaceId}" type="button" title="点击改名">${escapeHtml(name)}</button>`}
+      ${spaceButtonHtml(spaceId, "space-segment advanced-space-action", { hideName: true })}
     </div>
   `;
 }
@@ -1658,10 +1682,10 @@ function spaceButtonHtml(spaceId, extraClass = "", options = {}) {
   const art = artForSpace(spaceId);
   const name = options.label || displaySpaceName(spaceId);
   return `
-    <button class="${cls}" data-action="space" data-space="${spaceId}" type="button">
+    <button class="${cls}" data-action="space" data-space="${spaceId}" type="button" aria-label="${escapeHtml(name)}">
       <span class="space-art-wrap"><img class="space-art" src="./assets/${art}" alt=""></span>
       <span class="space-copy">
-        <strong>${escapeHtml(name)}</strong>
+        ${options.hideName ? "" : `<strong>${escapeHtml(name)}</strong>`}
         ${spaceEffectHtml(spaceId)}
         <small>${label}</small>
       </span>
@@ -2228,15 +2252,33 @@ function occupyManualActionSpace(owner, name = "") {
 function addCustomSlot() {
   state.customSlotCount = normalizeCustomSlotCount(state.customSlotCount, state.occupied) + 1;
   const spaceId = customSlotId(state.customSlotCount);
-  addLog(`已添加${displaySpaceName(spaceId)}；可以直接在高级建筑卡片下方填写建筑名。`);
+  state.editingCustomName = spaceId;
+  addLog(`已添加${displaySpaceName(spaceId)}；可以直接点击建筑名修改。`);
   render();
+  focusCustomNameEditor(spaceId);
 }
 
-function setCustomSlotName(spaceId, value, rerender = false) {
+function startCustomNameEdit(spaceId) {
+  if (!isCustomActionSpace(spaceId)) return;
+  state.editingCustomName = spaceId;
+  render();
+  focusCustomNameEditor(spaceId);
+}
+
+function focusCustomNameEditor(spaceId) {
+  window.setTimeout(() => {
+    const input = els.boardGrid?.querySelector(`input[data-custom-name="${spaceId}"]`);
+    input?.focus();
+    input?.select();
+  }, 0);
+}
+
+function setCustomSlotName(spaceId, value, rerender = false, finishEditing = false) {
   if (!isCustomActionSpace(spaceId)) return;
   const name = String(value || "").trim();
   if (name) customSlotNames()[spaceId] = name;
   else delete customSlotNames()[spaceId];
+  if (finishEditing && state.editingCustomName === spaceId) state.editingCustomName = null;
   if (rerender) render();
   else {
     updateCustomSlotLabel(spaceId);
@@ -2248,8 +2290,8 @@ function updateCustomSlotLabel(spaceId) {
   const button = els.boardGrid?.querySelector(`button[data-space="${spaceId}"]`);
   const title = button?.querySelector(".space-copy strong");
   if (title) title.textContent = displaySpaceName(spaceId);
-  const input = els.boardGrid?.querySelector(`input[data-custom-name="${spaceId}"]`);
-  if (input) input.placeholder = customSlotName(spaceId);
+  const nameButton = els.boardGrid?.querySelector(`button[data-action="edit-custom-name"][data-edit-space="${spaceId}"]`);
+  if (nameButton) nameButton.textContent = customSlotName(spaceId);
 }
 
 function resolveNextHarbor() {
@@ -2986,6 +3028,7 @@ function loadState() {
     next.pendingHarborTarget = next.pendingHarborTarget || null;
     next.pendingAmbassadorSpace = next.pendingAmbassadorSpace || null;
     next.customSlotNames = normalizeCustomSlotNames(next.customSlotNames);
+    next.editingCustomName = isCustomActionSpace(next.editingCustomName) ? next.editingCustomName : null;
     if (!parsed.customSlotNames && !hasOccupiedCustomSlot(next.occupied)) {
       next.customSlotCount = 0;
     } else {
