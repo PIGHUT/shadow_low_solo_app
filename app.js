@@ -368,6 +368,7 @@ function defaultState() {
     occupied: {},
     coOccupied: {},
     boardUnlocked: false,
+    boardEditSpace: null,
     freeEditMode: "cycle",
     harborQueue: [],
     pendingHumanSpace: null,
@@ -461,6 +462,14 @@ function normalizeFreeEditMode(mode) {
   return ["cycle", "coHuman", "coShadow", "coAmbassador", "clearCo"].includes(mode) ? mode : "cycle";
 }
 
+function visibleBoardSpaces() {
+  return [...currentOrder(), ...customActionSpaces()];
+}
+
+function normalizeBoardEditSpace(spaceId) {
+  return visibleBoardSpaces().includes(spaceId) ? spaceId : null;
+}
+
 function makeCorruptionTrack() {
   return { "-1": 1, "-2": 3, "-3": 3, "-4": 3, "-5": 3, "-6": 3, "-7": 3, "-8": 3, "-9": 3 };
 }
@@ -482,6 +491,7 @@ function bindEvents() {
     state.pendingHarborTarget = null;
     state.pendingAmbassadorSpace = null;
     state.special.ambassadorSpace = null;
+    state.boardEditSpace = null;
     addLog("已清空本轮行动格占用。");
     render();
   });
@@ -734,6 +744,7 @@ function finishRound() {
   state.special.ambassadorSpace = null;
   state.specialAdjust = false;
   state.boardUnlocked = false;
+  state.boardEditSpace = null;
   state.freeEditMode = "cycle";
   state.specialPlaceOwner = null;
   state.pendingSpecialMove = null;
@@ -1249,6 +1260,14 @@ function handleAction(action, target) {
   if (action === "set-free-edit-mode") {
     setFreeEditMode(target.dataset.mode);
   }
+  if (action === "set-board-owner") {
+    setBoardOwnerFromEditor(target.dataset.space, target.dataset.owner);
+    return;
+  }
+  if (action === "set-board-co-owner") {
+    setBoardCoOwnerFromEditor(target.dataset.space, target.dataset.owner);
+    return;
+  }
   if (action === "set-special-place-owner") {
     setSpecialPlaceOwner(target.dataset.owner);
   }
@@ -1321,6 +1340,7 @@ function render() {
   state.customSlotCount = normalizeCustomSlotCount(state.customSlotCount, state.occupied);
   state.coOccupied = normalizeCoOccupied(state.coOccupied);
   state.boardUnlocked = Boolean(state.boardUnlocked);
+  state.boardEditSpace = normalizeBoardEditSpace(state.boardEditSpace);
   state.freeEditMode = normalizeFreeEditMode(state.freeEditMode);
   state.customSlotNames = normalizeCustomSlotNames(state.customSlotNames);
   if (!isCustomActionSpace(state.editingCustomName)) state.editingCustomName = null;
@@ -1747,6 +1767,7 @@ function updateBoardOccupancy() {
     button.classList.toggle("co-human", coOwner === "human");
     button.classList.toggle("co-shadow", coOwner === "shadow");
     button.classList.toggle("co-ambassador", coOwner === "ambassador");
+    button.classList.toggle("editing", state.boardUnlocked && state.boardEditSpace === spaceId);
     const label = ownerLabel(owner);
     const status = button.querySelector("small");
     if (status) status.textContent = label;
@@ -1762,7 +1783,7 @@ function updateBoardOccupancy() {
 function ownerLabel(owner) {
   if (owner === "shadow") return "暗影领主占用";
   if (owner === "human") return "我占用";
-  if (owner === "ambassador") return "大使/特殊占用";
+  if (owner === "ambassador") return "特殊代理人占用";
   return "空";
 }
 
@@ -1790,29 +1811,58 @@ function renderSpecialAgentTools() {
     <div class="special-adjust-summary">
       <button class="ghost tiny" data-action="add-custom-slot" type="button" aria-label="添加高级建筑">添加</button>
     </div>
-    ${state.boardUnlocked ? freeEditPanelHtml() : ""}
+    ${state.boardUnlocked ? boardEditPanelHtml() : ""}
   `;
 }
 
-function freeEditPanelHtml() {
-  const mode = state.freeEditMode;
+function boardEditPanelHtml() {
+  const spaceId = normalizeBoardEditSpace(state.boardEditSpace);
+  state.boardEditSpace = spaceId;
+  const owner = normalizeOccupantOwner(state.occupied?.[spaceId]);
+  const coOwner = normalizeOccupantOwner(state.coOccupied?.[spaceId]);
   return `
     <div class="free-edit-panel">
-      <div class="adjust-toolbar" role="group" aria-label="自由编辑模式">
-        <span>自由编辑</span>
-        ${freeEditButton("cycle", "占用", mode)}
-        ${freeEditButton("coHuman", "共占我", mode)}
-        ${freeEditButton("coShadow", "共占AI", mode)}
-        ${freeEditButton("coAmbassador", "共占大使", mode)}
-        ${freeEditButton("clearCo", "清共占", mode)}
+      <div class="board-edit-head">
+        <strong>自由编辑</strong>
+        <span>${spaceId ? `正在编辑：${escapeHtml(displaySpaceName(spaceId))}` : "点一个行动格后编辑。特殊用于大使或卡牌造成的额外代理人。"}</span>
       </div>
-      <p class="adjust-hint">占用：空 -> 我 -> 暗影领主 -> 大使 -> 空。共占只加角标。</p>
+      ${spaceId ? `
+        <div class="board-edit-card">
+          <div class="board-edit-row">
+            <span>占用</span>
+            <div class="segmented-control four" role="group" aria-label="占用归属">
+              ${boardOwnerButton(spaceId, "", "空", owner)}
+              ${boardOwnerButton(spaceId, "human", "我", owner)}
+              ${boardOwnerButton(spaceId, "shadow", "AI", owner)}
+              ${boardOwnerButton(spaceId, "ambassador", "特殊", owner)}
+            </div>
+          </div>
+          <div class="board-edit-row">
+            <span>共占</span>
+            <div class="segmented-control four" role="group" aria-label="共占归属">
+              ${boardCoOwnerButton(spaceId, "", "无", coOwner, owner)}
+              ${boardCoOwnerButton(spaceId, "human", "我", coOwner, owner)}
+              ${boardCoOwnerButton(spaceId, "shadow", "AI", coOwner, owner)}
+              ${boardCoOwnerButton(spaceId, "ambassador", "特殊", coOwner, owner)}
+            </div>
+          </div>
+        </div>
+      ` : ""}
     </div>
   `;
 }
 
-function freeEditButton(mode, label, current) {
-  return `<button class="${mode === current ? "secondary" : "ghost"} tiny" data-action="set-free-edit-mode" data-mode="${mode}" type="button">${label}</button>`;
+function boardOwnerButton(spaceId, owner, label, current) {
+  const normalized = normalizeOccupantOwner(owner);
+  const active = normalized === current || (!normalized && !current);
+  return `<button class="${active ? "secondary" : "ghost"} tiny" data-action="set-board-owner" data-space="${spaceId}" data-owner="${owner}" type="button">${label}</button>`;
+}
+
+function boardCoOwnerButton(spaceId, owner, label, current, primaryOwner) {
+  const normalized = normalizeOccupantOwner(owner);
+  const active = normalized === current || (!normalized && !current);
+  const disabled = normalized && normalized === primaryOwner ? "disabled" : "";
+  return `<button class="${active ? "secondary" : "ghost"} tiny" data-action="set-board-co-owner" data-space="${spaceId}" data-owner="${owner}" type="button" ${disabled}>${label}</button>`;
 }
 
 function specialAdjustPanelHtml() {
@@ -2429,6 +2479,7 @@ function toggleBoardUnlocked() {
   state.boardUnlocked = !state.boardUnlocked;
   state.pendingSpecialMove = null;
   state.specialPlaceOwner = null;
+  state.boardEditSpace = null;
   if (!state.boardUnlocked) state.freeEditMode = "cycle";
   addLog(state.boardUnlocked ? "行动格已解锁：可自由编辑。" : "行动格已锁定。");
   render();
@@ -2440,15 +2491,28 @@ function setFreeEditMode(mode) {
 }
 
 function freeEditSpace(spaceId) {
-  const mode = normalizeFreeEditMode(state.freeEditMode);
-  if (mode === "coHuman") setCoOccupant(spaceId, "human");
-  else if (mode === "coShadow") setCoOccupant(spaceId, "shadow");
-  else if (mode === "coAmbassador") setCoOccupant(spaceId, "ambassador");
-  else if (mode === "clearCo") clearCoOccupant(spaceId);
-  else cycleSpaceOwner(spaceId);
+  state.boardEditSpace = normalizeBoardEditSpace(spaceId);
   renderBoard();
   renderSpecialAgentTools();
   saveState();
+}
+
+function setBoardOwnerFromEditor(spaceId, owner) {
+  const selected = normalizeBoardEditSpace(spaceId);
+  if (!selected) return;
+  state.boardEditSpace = selected;
+  setManualSpaceOwner(selected, owner);
+  render();
+}
+
+function setBoardCoOwnerFromEditor(spaceId, owner) {
+  const selected = normalizeBoardEditSpace(spaceId);
+  if (!selected) return;
+  state.boardEditSpace = selected;
+  const normalized = normalizeOccupantOwner(owner);
+  if (!normalized) clearCoOccupant(selected);
+  else setCoOccupant(selected, normalized);
+  render();
 }
 
 function cycleSpaceOwner(spaceId) {
@@ -2939,7 +3003,7 @@ function ownerShortLabel(owner) {
 function coOwnerText(owner) {
   if (owner === "human") return "我";
   if (owner === "shadow") return "暗影领主";
-  if (owner === "ambassador") return "大使";
+  if (owner === "ambassador") return "特殊";
   return "特殊";
 }
 
