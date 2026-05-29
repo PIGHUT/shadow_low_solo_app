@@ -1634,7 +1634,7 @@ function spaceGroupHtml(label, spaces, options = {}) {
     <div class="${classes}" aria-label="${escapeHtml(label)}">
       ${options.sharedTitle ? `<span class="space-group-title">${escapeHtml(label)}</span>` : ""}
       ${spaces.map((spaceId, index) => options.custom ? advancedBuildingSlotHtml(spaceId) : spaceButtonHtml(spaceId, "space-segment", { label: options.segmentLabels?.[index] })).join("")}
-      ${options.custom ? `<div class="custom-group-tools"><button class="ghost tiny" data-action="add-custom-slot" type="button">添加高级建筑</button></div>` : ""}
+      ${options.custom ? `<div class="custom-group-tools"><button class="ghost tiny" data-action="add-custom-slot" type="button" aria-label="添加高级建筑">添加</button></div>` : ""}
     </div>
   `;
 }
@@ -1713,7 +1713,7 @@ function renderSpecialAgentTools() {
     </div>
     <div class="special-adjust-summary">
       <button class="${state.specialAdjust ? "secondary" : "ghost"} tiny" data-action="toggle-special-adjust" type="button">${state.specialAdjust ? "结束特殊调整" : "特殊调整"}</button>
-      <button class="ghost tiny" data-action="add-custom-slot" type="button">添加高级建筑</button>
+      <button class="ghost tiny" data-action="add-custom-slot" type="button" aria-label="添加高级建筑">添加</button>
     </div>
     ${state.specialAdjust ? specialAdjustPanelHtml() : ""}
   `;
@@ -2626,7 +2626,7 @@ function targetForSpace(spaceId) {
 function displaySpaceName(spaceId) {
   if (!spaceId) return "无可用行动格";
   if (spaceId === "manualAdvanced") return "高级建筑（实体桌面选择）";
-  if (isCustomActionSpace(spaceId)) return `高级建筑：${customSlotName(spaceId)}`;
+  if (isCustomActionSpace(spaceId)) return customSlotName(spaceId);
   if (spaceId.startsWith("adv_")) {
     const item = state.advanced[Number(spaceId.slice(4))];
     const card = item ? cardById.get(item.id) : null;
