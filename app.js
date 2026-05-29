@@ -1324,6 +1324,7 @@ function render() {
   state.freeEditMode = normalizeFreeEditMode(state.freeEditMode);
   state.customSlotNames = normalizeCustomSlotNames(state.customSlotNames);
   if (!isCustomActionSpace(state.editingCustomName)) state.editingCustomName = null;
+  state.specialAdjust = false;
   state.specialPlaceOwner = normalizeOccupantOwner(state.specialPlaceOwner);
   state.pendingSpecialMove = normalizePendingSpecialMove(state.pendingSpecialMove);
   els.moduleSelect.value = state.module;
@@ -1397,8 +1398,8 @@ function renderNextCard() {
   if (!state.configured) {
     els.stepTitle.textContent = "准备开局";
     els.nextCard.innerHTML = `
-      <h3>完成设置</h3>
-      <p>选模组，勾清单。</p>
+      <h3>先按实体桌面完成设置</h3>
+      <p>选择模组后点击“开始”。应用会从第 1 轮的轮开始步骤接管流程提示。</p>
     `;
     return;
   }
@@ -1406,21 +1407,21 @@ function renderNextCard() {
   if (state.pending?.kind === "quickQuest") {
     const pending = state.pending;
     const fusionGuide = state.firstPlay
-      ? `<span class="quiet-strike">无直接完成，再看邪能融合。</span>`
-      : "无直接完成，再看邪能融合。";
+      ? `<span class="quiet-strike">如果没有正常可完成的，再预判有没有可在本回合末通过邪能融合完成的任务。</span>`
+      : "如果没有正常可完成的，再预判有没有可在本回合末通过邪能融合完成的任务。";
     els.stepTitle.textContent = "任务判定";
     els.nextCard.innerHTML = `
       <h3>${escapeHtml(pending.source)}：拿 1 张任务</h3>
       ${diceTrayHtml([{ sides: 4, value: pending.d4, label: "崖望旅馆位置" }])}
-      <p>${pending.refreshed ? "刷新后，" : ""}按优先级拿 1 张。</p>
+      <p>${pending.refreshed ? "先把崖望旅馆 4 张任务全部弃掉并翻新。" : ""}按暗影领主的任务选择优先级，在崖望旅馆牌列中选 1 张任务。</p>
       ${guideList([
-        `${inlineResource("v")} 先选可直接完成；并列取高分。`,
+        `${inlineResource("v")} 先看实体桌面上有没有暗影领主可正常完成的任务；若多张并列，优先任务胜点高的。`,
         fusionGuide,
-        `难选：按 ${dicePill(4, pending.d4)} 拿 1-4 位。`,
-        `${inlineEffect("quest")} 补牌；回合末查任务。`,
+        `如果以上优先级仍无法选出，或你想快速处理，就按骰面 ${dicePill(4, pending.d4)}，从崖望旅馆 1-4 位置拿任务。`,
+        `${inlineEffect("quest")} 拿走后给崖望旅馆补牌；回合末再检查暗影领主是否完成任务。`,
       ])}
       <div class="button-row" style="margin-top:12px">
-        <button class="primary" data-action="quick-quest-done" type="button">已处理</button>
+        <button class="primary" data-action="quick-quest-done" type="button">已按实体桌面处理</button>
       </div>
     `;
     return;
@@ -1429,17 +1430,18 @@ function renderNextCard() {
   if (state.pending?.kind === "quickBuilder") {
     els.stepTitle.textContent = "建筑购买判定";
     els.nextCard.innerHTML = `
-      <h3>建造者大厅</h3>
+      <h3>建造者大厅：判定暗影领主购买建筑</h3>
+      <p>比较建造者大厅的 3 张待购建筑。</p>
       ${guideList([
-        "从买得起的建筑中选。",
-        `1. 拥有者 ${inlineResource("v")} 最高。`,
-        `2. 待购 ${inlineResource("v")} 最多。`,
-        "3. 价格最高。",
-        "买不起：只占工位。",
+        "只在暗影领主买得起的建筑中比较。",
+        `第一优先：拥有者收益能给暗影领主最多 ${inlineResource("v")} 的建筑。`,
+        `若并列：选择建筑上 ${inlineResource("v")} 标记最多的建筑。`,
+        "若仍并列：选择价格最高的建筑。",
+        "如果没有买得起的建筑，暗影领主只霸占建造者大厅工位，不购买建筑。",
       ])}
       <div class="button-row" style="margin-top:12px">
-        <button class="primary" data-action="quick-builder-bought" type="button">已购买</button>
-        <button class="secondary" data-action="quick-builder-block" type="button">买不起</button>
+        <button class="primary" data-action="quick-builder-bought" type="button">已购买建筑</button>
+        <button class="secondary" data-action="quick-builder-block" type="button">买不起：只霸占工位</button>
       </div>
     `;
     return;
@@ -1449,17 +1451,18 @@ function renderNextCard() {
     const fusion = fusionTermHtml();
     els.stepTitle.textContent = "回合末任务检查";
     els.nextCard.innerHTML = `
-      <h3>任务检查</h3>
+      <h3>检查暗影领主是否完成任务</h3>
+      <p>在暗影领主每个代理人行动完成后，按实体桌面检查进行中任务。</p>
       ${guideList([
-        `先直接支付；多张取 ${inlineResource("v")} 最高。`,
-        `没有直接完成项时，考虑${fusion}。`,
-        `${fusion}：任务 ${inlineResource("v")} x2，只翻一次。`,
-        "能继续就继续。",
-        "最后确认任务是否清空。",
+        `先看有没有直接支付资源就可以完成的任务；若多张可完成，优先完成任务 ${inlineResource("v")} 最高的。`,
+        `没有正常可完成的任务时，才在此时考虑${fusion}；转换必须有助于完成任务。`,
+        `通过${fusion}完成的任务，只把任务奖励里的 ${inlineResource("v")} 翻倍一次；不要按转换次数继续叠倍。`,
+        "完成后支付需求、结算奖励；若还能继续完成任务，就继续按以上优先级处理。",
+        "最后确认暗影领主是否已经没有进行中任务；如果没有，下一次指派优先去崖望旅馆拿任务。",
       ])}
       <div class="button-row" style="margin-top:12px">
-        <button class="primary" data-action="quest-check-has-tasks" type="button">${inlineEffect("quest")}仍有任务</button>
-        <button class="secondary" data-action="quest-check-no-tasks" type="button">${inlineEffect("completed")}无任务</button>
+        <button class="primary" data-action="quest-check-has-tasks" type="button">${inlineEffect("quest")}仍有进行中任务，继续</button>
+        <button class="secondary" data-action="quest-check-no-tasks" type="button">${inlineEffect("completed")}已经没有进行中任务</button>
       </div>
     `;
     return;
@@ -1473,38 +1476,38 @@ function renderNextCard() {
     if (pending.d10) dice.push({ sides: 10, value: pending.d10, label: "高级建筑" });
     const actionGuides = pending.manualAdvanced
       ? [
-          "无已建高级建筑：重掷。",
-          "计数：左列上到下，再右列上到下。",
-          `${dicePill(10, pending.d10)} 被占则顺延。`,
-          "全被占：重掷。",
-          "按牌面执行；处理拥有者收益。",
-          `${inlineEffect("building")} 确认后记录。`,
+          "如果实体桌面没有任何已建成高级建筑，重掷行动骰。",
+          "按说明书顺序只数有建筑板块的高级建筑格：左列从上到下，再右列从上到下；数到底后回到左列顶部继续数。",
+          `占用的高级建筑也参与计数。用 ${dicePill(10, pending.d10)} 数到对应建筑；若该建筑已占用，就沿同一顺序顺延到下一个未占用高级建筑。`,
+          "如果所有已建成高级建筑都已占用，没有可用高级建筑，就重掷行动骰。",
+          "执行该建筑牌面；拥有者收益、费用和特殊效果都在实体桌面处理。",
+          `${inlineEffect("building")} 确认后，应用会在版图底部的“高级建筑”区域记录这次占用；可以随后编辑建筑名。`,
         ]
       : pending.advancedBlocked
         ? [
-            `${dicePill(10, pending.d10)}：已记录高级建筑全被占。`,
-            "重掷，或先补漏记建筑。",
+            `按 ${dicePill(10, pending.d10)} 检查下方高级建筑列表，但所有已记录高级建筑都已占用。`,
+            "按 solo 规则没有可用高级建筑时，重掷行动骰；也可以先添加漏记的高级建筑后重新判定。",
           ]
       : pending.maintainedAdvanced
         ? [
             `执行：${actionHintForSpaceHtml(pending.spaceId)}`,
-            `${dicePill(10, pending.d10)} -> ${escapeHtml(displaySpaceName(pending.spaceId))}${pending.fallback ? "（已顺延）" : ""}。`,
-            `${inlineEffect("arrow")} 然后查任务。`,
+            `按 ${dicePill(10, pending.d10)} 在下方高级建筑列表中数到 ${escapeHtml(displaySpaceName(pending.spaceId))}${pending.fallback ? "；骰中建筑已占用，所以顺延到此建筑" : ""}。`,
+            `${inlineEffect("arrow")} 执行完后点击确认，下一步会进入回合末任务检查。`,
           ]
       : [
           `执行：${actionHintForSpaceHtml(pending.spaceId)}`,
-          `${inlineEffect("arrow")} 然后查任务。`,
+          `${inlineEffect("arrow")} 执行完后点击确认，下一步会进入回合末任务检查。`,
         ];
     els.stepTitle.textContent = pending.ambassadorAction ? "暗影领主指派大使" : pending.harborReassign ? "暗影领主港口重指派" : "暗影领主行动";
     els.nextCard.innerHTML = `
       <h3>${escapeHtml(finalSpace)}</h3>
       ${diceTrayHtml(dice)}
-      <p>${pending.forcedCliff ? "无任务：去崖望旅馆。" : `目标：${escapeHtml(target)}。`}
-      ${pending.fallback && !pending.maintainedAdvanced && !pending.advancedBlocked ? "已顺延。" : ""}</p>
+      <p>${pending.forcedCliff ? "暗影领主没有进行中任务，本次必须去崖望旅馆。" : `目标：${escapeHtml(target)}。`}
+      ${pending.fallback && !pending.maintainedAdvanced && !pending.advancedBlocked ? "原目标被占，已按顺时针顺延到下一空位。" : ""}</p>
       ${guideList(actionGuides)}
       <div class="button-row" style="margin-top:12px">
-        ${pending.advancedBlocked ? "" : `<button class="primary" data-action="confirm-shadow" type="button">确认</button>`}
-        <button class="secondary" data-action="reroll-shadow" type="button">重掷</button>
+        ${pending.advancedBlocked ? "" : `<button class="primary" data-action="confirm-shadow" type="button">确认已执行</button>`}
+        <button class="secondary" data-action="reroll-shadow" type="button">重掷 / 重新判定</button>
       </div>
     `;
     return;
@@ -1515,10 +1518,10 @@ function renderNextCard() {
     els.nextCard.innerHTML = `
       <h3>轮开始步骤</h3>
       ${guideList([
-        `当前轮次 ${inlineResource("v", 3)} -> 建造者大厅，每张 ${inlineResource("v")}。`,
-        "结算轮开始效果。",
-        `暗影领主拿 ${inlineResource("g", state.round)}。`,
-        state.round === 5 ? "双方 +1 代理人。" : "先手方开始。",
+        `从当前轮次格移走 ${inlineResource("v", 3)}，放到建造者大厅的待购建筑上：每张 ${inlineResource("v")}。`,
+        "结算所有“购买时 / 轮开始”建筑效果。",
+        `暗影领主获得等同于轮数的金币：本轮 ${inlineResource("g", state.round)}。`,
+        state.round === 5 ? "双方加入额外代理人。" : "然后由持有先手标记的一方开始本轮。",
       ])}
     `;
     return;
@@ -1529,7 +1532,7 @@ function renderNextCard() {
     els.nextCard.innerHTML = `
       <h3>暗影领主行动准备</h3>
       ${diceTrayHtml([{ sides: actionTables[state.module].die, value: "?", label: "行动表" }])}
-      <p>点按钮判定。</p>
+      <p>暗影领主回合通常会自动掷骰并给出行动格。如果页面停在这里，点击下方主按钮继续判定。</p>
     `;
     return;
   }
@@ -1539,10 +1542,11 @@ function renderNextCard() {
     els.nextCard.innerHTML = `
       <h3>本轮开始前先指派大使</h3>
       ${guideList([
-        "选空格，放大使并执行。",
-        "高级建筑：底部选择；没有就添加。",
-        "深水港：不重指派。",
-        state.pendingAmbassadorSpace ? `已选：${escapeHtml(displaySpaceName(state.pendingAmbassadorSpace))}。` : "可选格已高亮。",
+        "在版图上选择一个未占用行动格，放置大使并执行该行动。",
+        "如果大使去已建成高级建筑，选择底部“高级建筑”里的对应建筑；若还没有记录，先添加建筑。",
+        "大使执行行动后，占用该行动格；它对所有玩家都算作对手代理人。",
+        "如果把大使放到深水港，它不会在轮末重指派。",
+        state.pendingAmbassadorSpace ? `已选择：${escapeHtml(displaySpaceName(state.pendingAmbassadorSpace))}。` : "当前可选行动格已经高亮。",
       ])}
     `;
     return;
@@ -1553,10 +1557,10 @@ function renderNextCard() {
     els.nextCard.innerHTML = `
       <h3>指派 1 个代理人</h3>
       <ul>
-        <li>选高亮空格并执行。</li>
-        <li>高级建筑/样品：底部选择；没有就添加。</li>
-        <li>可完成 1 个任务；深水港稍后重指派。</li>
-        <li>${state.pendingHumanSpace ? `已选：${escapeHtml(displaySpaceName(state.pendingHumanSpace))}。` : "先选行动格。"}</li>
+        <li>在版图上选择一个高亮的未占用行动格，放置你的代理人并执行该行动。</li>
+        <li>如果你去已建成高级建筑，或用样品等效果指派到待购建筑，选择底部“高级建筑”里的对应建筑；若还没有记录，先添加建筑。</li>
+        <li>你可以完成 1 个任务；若去了深水港，稍后会进入港口重指派。</li>
+        <li>${state.pendingHumanSpace ? `已选择：${escapeHtml(displaySpaceName(state.pendingHumanSpace))}。` : "选择行动格后，下方按钮才会继续。"}</li>
       </ul>
     `;
     return;
@@ -1571,7 +1575,7 @@ function renderNextCard() {
     els.stepTitle.textContent = "轮结束";
     els.nextCard.innerHTML = `
       <h3>收回代理人</h3>
-      <p>收回，进入下一轮。</p>
+      <p>所有深水港代理人都已重指派。收回双方所有代理人，然后点击下方主按钮进入下一轮。</p>
     `;
     return;
   }
@@ -1581,9 +1585,9 @@ function renderNextCard() {
     els.nextCard.innerHTML = `
       <h3>最终计分</h3>
       ${guideList([
-        "填下方计分表。",
-        `暗影领主：无领主；任务每张 ${inlineResource("v", 4)}。`,
-        state.module === "skullport" ? `${inlineResource("x")} 你扣分，暗影领主加分。` : "无腐化计分。",
+        "按实体桌面把双方信息填入下方“终局计分表”。",
+        `暗影领主也计当前 ${inlineResource("v")}、酒馆冒险者、每 ${inlineResource("g", 2)} = ${inlineResource("v")}、每个完成任务 ${inlineResource("v", 4)}。`,
+        state.module === "skullport" ? `骷髅港：暗影领主的 ${inlineResource("x")} 按当前腐化轨数值正向得分。` : "本局没有骷髅港腐化正向计分。",
       ])}
     `;
   }
@@ -1600,18 +1604,18 @@ function renderHarborCard() {
   if (next.owner === "shadow") {
     els.nextCard.innerHTML = `
       <h3>暗影领主的 ${displaySpaceName(next.space)}</h3>
-      <p>重指派到非港口格。</p>
+      <p>按深水港编号顺序重指派。暗影领主不能重指派到深水港；点击下方按钮为它重新判定行动格。</p>
       <div class="button-row" style="margin-top:12px">
-        <button class="primary" data-action="harbor-shadow" type="button">判定重指派</button>
+        <button class="primary" data-action="harbor-shadow" type="button">判定暗影领主重指派</button>
       </div>
     `;
   } else {
     els.nextCard.innerHTML = `
       <h3>你的 ${displaySpaceName(next.space)}</h3>
-      <p>选非港口空格；可完成 1 任务。</p>
+      <p>在版图上选择一个非深水港的高亮空位，重指派该代理人，执行行动并最多完成 1 个任务。若去高级建筑，选择底部“高级建筑”里的对应建筑。</p>
       ${state.pendingHarborTarget ? `<p>已选择：${escapeHtml(displaySpaceName(state.pendingHarborTarget))}。</p>` : ""}
       <div class="button-row" style="margin-top:12px">
-        <button class="primary" data-action="harbor-done" type="button" ${state.pendingHarborTarget ? "" : "disabled"}>已处理</button>
+        <button class="primary" data-action="harbor-done" type="button" ${state.pendingHarborTarget ? "" : "disabled"}>该港口代理人已处理</button>
       </div>
     `;
   }
@@ -1776,7 +1780,7 @@ function renderSpecialAgentTools() {
   els.specialAgentTools.innerHTML = `
     <div>
       <strong>标记与特殊代理人</strong>
-      <span>归属 / 移动 / 回收。</span>
+      <span>归属；行动格解锁后可编辑占用与共占。</span>
     </div>
     <div class="special-agent-rows">
       ${firstPlayerOwnerRow()}
@@ -1784,11 +1788,9 @@ function renderSpecialAgentTools() {
       ${specialAgentOwnerRow("ambassador", "大使", "icon-ambassador.png", state.special.ambassadorOwner)}
     </div>
     <div class="special-adjust-summary">
-      <button class="${state.specialAdjust ? "secondary" : "ghost"} tiny" data-action="toggle-special-adjust" type="button">${state.specialAdjust ? "结束特殊调整" : "特殊调整"}</button>
       <button class="ghost tiny" data-action="add-custom-slot" type="button" aria-label="添加高级建筑">添加</button>
     </div>
     ${state.boardUnlocked ? freeEditPanelHtml() : ""}
-    ${state.specialAdjust ? specialAdjustPanelHtml() : ""}
   `;
 }
 
@@ -2401,12 +2403,6 @@ function handleSpaceSelection(spaceId) {
 }
 
 function boardPlacementMode() {
-  if (state.specialAdjust) {
-    const move = normalizePendingSpecialMove(state.pendingSpecialMove);
-    if (move) return { kind: "specialMove", from: move.from, owner: move.owner };
-    const owner = normalizeOccupantOwner(state.specialPlaceOwner);
-    if (owner) return { kind: "specialPlace", owner };
-  }
   if (state.boardUnlocked) return { kind: "freeEdit" };
   if (state.phase === "humanTurn") return { kind: "human" };
   if (state.phase === "ambassador") return { kind: "ambassador" };
@@ -3181,7 +3177,7 @@ function loadState() {
     } else {
       next.customSlotCount = normalizeCustomSlotCount(next.customSlotCount, next.occupied);
     }
-    next.specialAdjust = Boolean(next.specialAdjust);
+    next.specialAdjust = false;
     next.specialPlaceOwner = normalizeOccupantOwner(next.specialPlaceOwner);
     next.pendingSpecialMove = normalizePendingSpecialMoveForState(next.pendingSpecialMove, next);
     if (next.configured && next.round === 1 && (next.agents?.shadow || 0) === 0) {
