@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>深水城领主单人自动机助手</title>
-  <link rel="stylesheet" href="./styles.css?v=20260529-inline-advanced-name-2">
+  <link rel="stylesheet" href="./styles.css?v=20260529-text-trim-2">
   <script src="./cards-data.js?v=20260528-quick-only-2"></script>
-  <script src="./app.js?v=20260529-inline-advanced-name-2" defer></script>
+  <script src="./app.js?v=20260529-text-trim-2" defer></script>
 </head>
 <body>
   <div class="app-shell">
@@ -66,11 +66,11 @@
           </div>
           <label class="checkbox-line">
             <input id="longGameToggle" type="checkbox">
-            <span>扩展长局代理人数</span>
+            <span>长局代理人数</span>
           </label>
           <label class="checkbox-line">
             <input id="firstPlayToggle" type="checkbox">
-            <span>首次游玩此 Solo 变体</span>
+            <span>首次游玩</span>
           </label>
         </div>
 
@@ -78,17 +78,17 @@
           <p class="setup-note-title">开局注意事项</p>
           <label>
             <input type="checkbox">
-            <span>每个轮次格预放 <span class="no-break">3 个 <img class="inline-icon" src="./assets/res-vp.png" alt="胜点"> 标记</span>；每轮开始把当前轮次格的 3 个标记移到建造者大厅的 3 张待购建筑上。</span>
+            <span>每个轮次格放 <span class="no-break">3 个 <img class="inline-icon" src="./assets/res-vp.png" alt="胜点"> 标记</span>；轮开始移到建造者大厅。</span>
           </label>
           <label><input type="checkbox"><span>建造者大厅翻 3 张建筑。</span></label>
-          <label><input type="checkbox"><span>崖望旅馆翻 4 张任务；你和暗影领主各发 2 张公开进行中任务。</span></label>
-          <label><input type="checkbox"><span>你拿 1 张领主卡和 2 张阴谋卡；暗影领主不拿领主卡，拿 2 张隐藏阴谋卡。</span></label>
-          <label><input type="checkbox"><span>暗影领主起始 4 金币；你作为第二玩家起始 5 金币。</span></label>
-          <label><input type="checkbox"><span>准备四面骰、十面骰，以及基础版十二面骰或扩展二十面骰。</span></label>
+          <label><input type="checkbox"><span>崖望旅馆翻 4 张任务；双方各 2 张公开任务。</span></label>
+          <label><input type="checkbox"><span>你：1 领主、2 阴谋；暗影领主：2 隐藏阴谋，无领主。</span></label>
+          <label><input type="checkbox"><span>起始金币：暗影领主 4，你 5。</span></label>
+          <label><input type="checkbox"><span>备好 d4、d10、d12/扩展 d20。</span></label>
         </div>
 
         <div class="button-row">
-          <button class="primary" id="newGameBtn" type="button">按此配置开始</button>
+          <button class="primary" id="newGameBtn" type="button">开始</button>
         </div>
       </section>
 
