@@ -368,8 +368,6 @@ function defaultState() {
     occupied: {},
     coOccupied: {},
     boardUnlocked: false,
-    boardEditSpace: null,
-    freeEditMode: "cycle",
     harborQueue: [],
     pendingHumanSpace: null,
     pendingHarborTarget: null,
@@ -453,21 +451,9 @@ function normalizeCoOccupied(coOccupied) {
   const normalized = {};
   Object.entries(coOccupied || {}).forEach(([spaceId, owner]) => {
     const occupant = normalizeOccupantOwner(owner);
-    if (spaceId && occupant) normalized[spaceId] = occupant;
+    if (spaceId && occupant === "human") normalized[spaceId] = occupant;
   });
   return normalized;
-}
-
-function normalizeFreeEditMode(mode) {
-  return ["cycle", "coHuman", "coShadow", "coAmbassador", "clearCo"].includes(mode) ? mode : "cycle";
-}
-
-function visibleBoardSpaces() {
-  return [...currentOrder(), ...customActionSpaces()];
-}
-
-function normalizeBoardEditSpace(spaceId) {
-  return visibleBoardSpaces().includes(spaceId) ? spaceId : null;
 }
 
 function makeCorruptionTrack() {
@@ -491,7 +477,6 @@ function bindEvents() {
     state.pendingHarborTarget = null;
     state.pendingAmbassadorSpace = null;
     state.special.ambassadorSpace = null;
-    state.boardEditSpace = null;
     addLog("已清空本轮行动格占用。");
     render();
   });
@@ -507,6 +492,13 @@ function bindEvents() {
     const action = target.dataset.action;
     if (!action) return;
     handleAction(action, target);
+  });
+
+  document.addEventListener("dblclick", (event) => {
+    const source = event.target instanceof Element ? event.target : event.target.parentElement;
+    const target = source?.closest('[data-action="space"]');
+    if (!target) return;
+    handleSpaceDoubleClick(target.dataset.space);
   });
 
   document.addEventListener("keydown", (event) => {
@@ -700,7 +692,7 @@ function continueAfterTurnTransition() {
   if (state.phase === "harbor" && !state.pending) {
     const nextHarbor = nextHarborEntry();
     if (nextHarbor?.owner === "shadow") {
-      planShadowAction({ harborReassign: true, sourceHarbor: nextHarbor.space });
+      planShadowAction({ harborReassign: true, sourceHarbor: harborQueueKey(nextHarbor) });
       return;
     }
   }
@@ -744,8 +736,6 @@ function finishRound() {
   state.special.ambassadorSpace = null;
   state.specialAdjust = false;
   state.boardUnlocked = false;
-  state.boardEditSpace = null;
-  state.freeEditMode = "cycle";
   state.specialPlaceOwner = null;
   state.pendingSpecialMove = null;
   state.agents = { shadow: 0, human: 0 };
@@ -776,7 +766,7 @@ function planShadowAction(options = {}) {
     kind: "shadowAction",
     harborReassign,
     ambassadorAction,
-    sourceHarbor: options.sourceHarbor || (harborReassign ? nextHarborEntry()?.space : null),
+    sourceHarbor: options.sourceHarbor || (harborReassign ? harborQueueKey(nextHarborEntry()) : null),
     forcedCliff,
     tableDie: table.die,
     roll,
@@ -1257,17 +1247,6 @@ function handleAction(action, target) {
   if (action === "toggle-special-adjust") {
     toggleSpecialAdjust();
   }
-  if (action === "set-free-edit-mode") {
-    setFreeEditMode(target.dataset.mode);
-  }
-  if (action === "set-board-owner") {
-    setBoardOwnerFromEditor(target.dataset.space, target.dataset.owner);
-    return;
-  }
-  if (action === "set-board-co-owner") {
-    setBoardCoOwnerFromEditor(target.dataset.space, target.dataset.owner);
-    return;
-  }
   if (action === "set-special-place-owner") {
     setSpecialPlaceOwner(target.dataset.owner);
   }
@@ -1323,14 +1302,14 @@ function handleAction(action, target) {
     if (state.pendingHarborTarget && targetForSpace(state.pendingHarborTarget) === "castle") {
       claimFirstPlayer("human", "你在深水港重指派时拿到先手标记，并抽 1 张阴谋。");
     }
-    completeHarborReassign(nextHarbor?.space);
+    completeHarborReassign(nextHarbor);
     state.pendingHarborTarget = null;
     state.phase = state.harborQueue.length ? "harbor" : "endRound";
     continueAfterTurnTransition();
   }
   if (action === "harbor-shadow") {
     const nextHarbor = nextHarborEntry();
-    planShadowAction({ harborReassign: true, sourceHarbor: nextHarbor?.space });
+    planShadowAction({ harborReassign: true, sourceHarbor: harborQueueKey(nextHarbor) });
   }
 }
 
@@ -1340,8 +1319,6 @@ function render() {
   state.customSlotCount = normalizeCustomSlotCount(state.customSlotCount, state.occupied);
   state.coOccupied = normalizeCoOccupied(state.coOccupied);
   state.boardUnlocked = Boolean(state.boardUnlocked);
-  state.boardEditSpace = normalizeBoardEditSpace(state.boardEditSpace);
-  state.freeEditMode = normalizeFreeEditMode(state.freeEditMode);
   state.customSlotNames = normalizeCustomSlotNames(state.customSlotNames);
   if (!isCustomActionSpace(state.editingCustomName)) state.editingCustomName = null;
   state.specialAdjust = false;
@@ -1767,14 +1744,13 @@ function updateBoardOccupancy() {
     button.classList.toggle("co-human", coOwner === "human");
     button.classList.toggle("co-shadow", coOwner === "shadow");
     button.classList.toggle("co-ambassador", coOwner === "ambassador");
-    button.classList.toggle("editing", state.boardUnlocked && state.boardEditSpace === spaceId);
     const label = ownerLabel(owner);
     const status = button.querySelector("small");
     if (status) status.textContent = label;
     const badge = button.querySelector(".co-badge");
     if (badge) {
       badge.hidden = !coOwner;
-      badge.textContent = coOwner ? `共占 ${coOwnerText(coOwner)}` : "";
+      badge.textContent = coOwner ? "我共占" : "";
     }
   });
   updateBoardInteractivity();
@@ -1790,9 +1766,14 @@ function ownerLabel(owner) {
 function updateBoardInteractivity() {
   const mode = boardPlacementMode();
   els.boardGrid.querySelectorAll("[data-space]").forEach((button) => {
-    const selectable = canSelectSpace(button.dataset.space, mode);
+    const spaceId = button.dataset.space;
+    const selectable = canSelectSpace(spaceId, mode);
+    const coPlaceable = mode?.kind === "human" && state.occupied[spaceId] === "shadow";
     button.disabled = !selectable;
     button.classList.toggle("placeable", selectable);
+    button.classList.toggle("co-placeable", coPlaceable);
+    if (coPlaceable) button.title = "双击标记我共占";
+    else button.removeAttribute("title");
   });
 }
 
@@ -1811,58 +1792,19 @@ function renderSpecialAgentTools() {
     <div class="special-adjust-summary">
       <button class="ghost tiny" data-action="add-custom-slot" type="button" aria-label="添加高级建筑">添加</button>
     </div>
-    ${state.boardUnlocked ? boardEditPanelHtml() : ""}
+    ${state.boardUnlocked ? freeEditPanelHtml() : ""}
   `;
 }
 
-function boardEditPanelHtml() {
-  const spaceId = normalizeBoardEditSpace(state.boardEditSpace);
-  state.boardEditSpace = spaceId;
-  const owner = normalizeOccupantOwner(state.occupied?.[spaceId]);
-  const coOwner = normalizeOccupantOwner(state.coOccupied?.[spaceId]);
+function freeEditPanelHtml() {
   return `
     <div class="free-edit-panel">
       <div class="board-edit-head">
         <strong>自由编辑</strong>
-        <span>${spaceId ? `正在编辑：${escapeHtml(displaySpaceName(spaceId))}` : "点一个行动格后编辑。特殊用于大使或卡牌造成的额外代理人。"}</span>
+        <span>单击行动格切换：空 -> 我 -> AI -> 特殊 -> 空。玩家回合中，双击 AI 已占格可标记我共占。</span>
       </div>
-      ${spaceId ? `
-        <div class="board-edit-card">
-          <div class="board-edit-row">
-            <span>占用</span>
-            <div class="segmented-control four" role="group" aria-label="占用归属">
-              ${boardOwnerButton(spaceId, "", "空", owner)}
-              ${boardOwnerButton(spaceId, "human", "我", owner)}
-              ${boardOwnerButton(spaceId, "shadow", "AI", owner)}
-              ${boardOwnerButton(spaceId, "ambassador", "特殊", owner)}
-            </div>
-          </div>
-          <div class="board-edit-row">
-            <span>共占</span>
-            <div class="segmented-control four" role="group" aria-label="共占归属">
-              ${boardCoOwnerButton(spaceId, "", "无", coOwner, owner)}
-              ${boardCoOwnerButton(spaceId, "human", "我", coOwner, owner)}
-              ${boardCoOwnerButton(spaceId, "shadow", "AI", coOwner, owner)}
-              ${boardCoOwnerButton(spaceId, "ambassador", "特殊", coOwner, owner)}
-            </div>
-          </div>
-        </div>
-      ` : ""}
     </div>
   `;
-}
-
-function boardOwnerButton(spaceId, owner, label, current) {
-  const normalized = normalizeOccupantOwner(owner);
-  const active = normalized === current || (!normalized && !current);
-  return `<button class="${active ? "secondary" : "ghost"} tiny" data-action="set-board-owner" data-space="${spaceId}" data-owner="${owner}" type="button">${label}</button>`;
-}
-
-function boardCoOwnerButton(spaceId, owner, label, current, primaryOwner) {
-  const normalized = normalizeOccupantOwner(owner);
-  const active = normalized === current || (!normalized && !current);
-  const disabled = normalized && normalized === primaryOwner ? "disabled" : "";
-  return `<button class="${active ? "secondary" : "ghost"} tiny" data-action="set-board-co-owner" data-space="${spaceId}" data-owner="${owner}" type="button" ${disabled}>${label}</button>`;
 }
 
 function specialAdjustPanelHtml() {
@@ -2350,13 +2292,28 @@ function recommendBuilderPurchase() {
   return affordable[0] || null;
 }
 
-function addHarbor(space, owner) {
-  const existing = state.harborQueue.find((item) => item.space === space);
+function harborQueueKey(item) {
+  if (!item) return "";
+  return item.id || `${item.space}:main`;
+}
+
+function addHarbor(space, owner, options = {}) {
+  const id = options.co ? `${space}:co:${owner}` : `${space}:main`;
+  const existing = state.harborQueue.find((item) => harborQueueKey(item) === id);
   if (existing) {
     existing.owner = owner;
+    existing.co = Boolean(options.co);
+    existing.id = id;
     return;
   }
-  state.harborQueue.push({ space, owner });
+  state.harborQueue.push({ space, owner, id, co: Boolean(options.co) });
+}
+
+function removeHarborEntry(space, owner, co) {
+  state.harborQueue = state.harborQueue.filter((item) => {
+    if (item.space !== space || item.owner !== owner) return true;
+    return Boolean(item.co) !== Boolean(co);
+  });
 }
 
 function occupyManualActionSpace(owner, name = "") {
@@ -2423,22 +2380,34 @@ function resolveNextHarbor() {
     return;
   }
   const next = nextHarborEntry();
-  if (next?.owner === "shadow") planShadowAction({ harborReassign: true, sourceHarbor: next.space });
+  if (next?.owner === "shadow") planShadowAction({ harborReassign: true, sourceHarbor: harborQueueKey(next) });
   else render();
 }
 
 function nextHarborEntry() {
-  state.harborQueue.sort((a, b) => harborOrder(a.space) - harborOrder(b.space));
+  state.harborQueue.sort((a, b) => {
+    const orderDelta = harborOrder(a.space) - harborOrder(b.space);
+    if (orderDelta) return orderDelta;
+    return Number(Boolean(a.co)) - Number(Boolean(b.co));
+  });
   return state.harborQueue[0] || null;
 }
 
-function completeHarborReassign(space) {
-  const entry = space ? state.harborQueue.find((item) => item.space === space) : nextHarborEntry();
+function completeHarborReassign(entryOrSpace) {
+  const entry = typeof entryOrSpace === "object"
+    ? entryOrSpace
+    : entryOrSpace
+      ? state.harborQueue.find((item) => harborQueueKey(item) === entryOrSpace || item.space === entryOrSpace)
+      : nextHarborEntry();
   const completedSpace = entry?.space;
   if (!completedSpace) return;
-  state.harborQueue = state.harborQueue.filter((item) => item.space !== completedSpace);
-  delete state.occupied[completedSpace];
-  delete state.coOccupied[completedSpace];
+  const completedKey = harborQueueKey(entry);
+  state.harborQueue = state.harborQueue.filter((item) => harborQueueKey(item) !== completedKey);
+  if (entry.co) {
+    if (state.coOccupied[completedSpace] === entry.owner) delete state.coOccupied[completedSpace];
+    return;
+  }
+  if (state.occupied[completedSpace] === entry.owner) delete state.occupied[completedSpace];
 }
 
 function handleSpaceSelection(spaceId) {
@@ -2450,6 +2419,12 @@ function handleSpaceSelection(spaceId) {
   if (mode.kind === "human") selectHumanSpace(spaceId);
   if (mode.kind === "harbor") selectHumanHarborReassign(spaceId);
   if (mode.kind === "ambassador") selectAmbassadorSpace(spaceId);
+}
+
+function handleSpaceDoubleClick(spaceId) {
+  if (state.boardUnlocked || state.phase !== "humanTurn") return;
+  if (state.occupied?.[spaceId] !== "shadow") return;
+  selectHumanCoOccupiedSpace(spaceId);
 }
 
 function boardPlacementMode() {
@@ -2469,7 +2444,7 @@ function canSelectSpace(spaceId, mode = boardPlacementMode()) {
   if (mode.kind === "specialMove") return spaceId !== mode.from && !owner;
   if (mode.kind === "specialPlace") return !owner;
   if (mode.kind === "freeEdit") return true;
-  if (mode.kind === "human") return !owner || state.pendingHumanSpace === spaceId;
+  if (mode.kind === "human") return !owner || owner === "shadow" || state.pendingHumanSpace === spaceId;
   if (mode.kind === "harbor") return targetForSpace(spaceId) !== "harbor" && (!owner || state.pendingHarborTarget === spaceId);
   if (mode.kind === "ambassador") return !owner || state.pendingAmbassadorSpace === spaceId;
   return false;
@@ -2479,40 +2454,14 @@ function toggleBoardUnlocked() {
   state.boardUnlocked = !state.boardUnlocked;
   state.pendingSpecialMove = null;
   state.specialPlaceOwner = null;
-  state.boardEditSpace = null;
-  if (!state.boardUnlocked) state.freeEditMode = "cycle";
   addLog(state.boardUnlocked ? "行动格已解锁：可自由编辑。" : "行动格已锁定。");
   render();
 }
 
-function setFreeEditMode(mode) {
-  state.freeEditMode = normalizeFreeEditMode(mode);
-  render();
-}
-
 function freeEditSpace(spaceId) {
-  state.boardEditSpace = normalizeBoardEditSpace(spaceId);
+  cycleSpaceOwner(spaceId);
   renderBoard();
-  renderSpecialAgentTools();
   saveState();
-}
-
-function setBoardOwnerFromEditor(spaceId, owner) {
-  const selected = normalizeBoardEditSpace(spaceId);
-  if (!selected) return;
-  state.boardEditSpace = selected;
-  setManualSpaceOwner(selected, owner);
-  render();
-}
-
-function setBoardCoOwnerFromEditor(spaceId, owner) {
-  const selected = normalizeBoardEditSpace(spaceId);
-  if (!selected) return;
-  state.boardEditSpace = selected;
-  const normalized = normalizeOccupantOwner(owner);
-  if (!normalized) clearCoOccupant(selected);
-  else setCoOccupant(selected, normalized);
-  render();
 }
 
 function cycleSpaceOwner(spaceId) {
@@ -2531,24 +2480,10 @@ function setManualSpaceOwner(spaceId, owner) {
   }
   state.occupied[spaceId] = normalized;
   if (state.coOccupied[spaceId] === normalized) delete state.coOccupied[spaceId];
+  if (normalized !== "shadow") delete state.coOccupied[spaceId];
   if (targetForSpace(spaceId) === "harbor" && normalized !== "ambassador") addHarbor(spaceId, normalized);
   else state.harborQueue = state.harborQueue.filter((item) => item.space !== spaceId);
   if (normalized === "ambassador") state.special.ambassadorSpace = spaceId;
-}
-
-function setCoOccupant(spaceId, owner) {
-  const normalized = normalizeOccupantOwner(owner);
-  if (!spaceId || !normalized) return;
-  if (state.occupied?.[spaceId] === normalized) {
-    delete state.coOccupied[spaceId];
-    return;
-  }
-  if (state.coOccupied[spaceId] === normalized) delete state.coOccupied[spaceId];
-  else state.coOccupied[spaceId] = normalized;
-}
-
-function clearCoOccupant(spaceId) {
-  if (spaceId) delete state.coOccupied[spaceId];
 }
 
 function toggleSpecialAdjust() {
@@ -2645,6 +2580,8 @@ function replacePendingSpaceReference(from, to) {
 function selectHumanSpace(spaceId) {
   if (state.pendingHumanSpace === spaceId) {
     clearHumanPendingSpace();
+  } else if (state.occupied[spaceId] === "shadow") {
+    return;
   } else {
     clearHumanPendingSpace();
     occupySpace(spaceId, "human");
@@ -2656,11 +2593,26 @@ function selectHumanSpace(spaceId) {
   saveState();
 }
 
+function selectHumanCoOccupiedSpace(spaceId) {
+  if (state.occupied[spaceId] !== "shadow") return;
+  clearHumanPendingSpace();
+  state.coOccupied[spaceId] = "human";
+  state.pendingHumanSpace = spaceId;
+  if (targetForSpace(spaceId) === "harbor") addHarbor(spaceId, "human", { co: true });
+  addLog(`已标记你共占 ${displaySpaceName(spaceId)}。`);
+  renderBoard();
+  renderPrimaryAction();
+  renderNextCard();
+  saveState();
+}
+
 function clearHumanPendingSpace() {
   const space = state.pendingHumanSpace;
   if (!space) return;
   if (state.occupied[space] === "human") delete state.occupied[space];
-  state.harborQueue = state.harborQueue.filter((item) => item.space !== space);
+  if (state.coOccupied[space] === "human") delete state.coOccupied[space];
+  removeHarborEntry(space, "human", false);
+  removeHarborEntry(space, "human", true);
   state.pendingHumanSpace = null;
 }
 
