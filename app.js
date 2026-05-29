@@ -154,7 +154,30 @@ const boardImageAssets = Array.from(new Set([
   "icon-lieutenant.png",
 ]));
 
-const customActionSpaces = ["custom1", "custom2", "custom3"];
+const MIN_CUSTOM_ACTION_SLOTS = 3;
+
+function customSlotId(number) {
+  return `custom${number}`;
+}
+
+function customSlotNumber(spaceId) {
+  const match = String(spaceId || "").match(/^custom(\d+)$/);
+  return match ? Number(match[1]) : 0;
+}
+
+function isCustomActionSpace(spaceId) {
+  return customSlotNumber(spaceId) > 0;
+}
+
+function normalizeCustomSlotCount(count, occupied = {}) {
+  const occupiedMax = Object.keys(occupied || {}).reduce((max, spaceId) => Math.max(max, customSlotNumber(spaceId)), 0);
+  return Math.max(MIN_CUSTOM_ACTION_SLOTS, Number(count) || 0, occupiedMax);
+}
+
+function customActionSpaces() {
+  const count = normalizeCustomSlotCount(state?.customSlotCount, state?.occupied);
+  return Array.from({ length: count }, (_, index) => customSlotId(index + 1));
+}
 
 const spaceDefs = {
   cliffA: { target: "cliffwatch", name: "崖望旅馆 A", detail: "拿 1 任务 + 2 金币", effects: ["quest", "g", "g"] },
@@ -329,6 +352,10 @@ function defaultState() {
     pendingHarborTarget: null,
     pendingAmbassadorSpace: null,
     pending: null,
+    customSlotCount: MIN_CUSTOM_ACTION_SLOTS,
+    specialAdjust: false,
+    specialPlaceOwner: null,
+    pendingSpecialMove: null,
     special: {
       lieutenantOwner: "none",
       ambassadorOwner: "none",
@@ -643,6 +670,9 @@ function finishRound() {
   state.pendingHarborTarget = null;
   state.pendingAmbassadorSpace = null;
   state.special.ambassadorSpace = null;
+  state.specialAdjust = false;
+  state.specialPlaceOwner = null;
+  state.pendingSpecialMove = null;
   state.agents = { shadow: 0, human: 0 };
   addLog(`第 ${state.round - 1} 轮结束：收回所有代理人。`);
   render();
@@ -1130,6 +1160,25 @@ function handleAction(action, target) {
     handleSpaceSelection(target.dataset.space);
     return;
   }
+  if (action === "add-custom-slot") {
+    addCustomSlot();
+  }
+  if (action === "toggle-special-adjust") {
+    toggleSpecialAdjust();
+  }
+  if (action === "set-special-place-owner") {
+    setSpecialPlaceOwner(target.dataset.owner);
+  }
+  if (action === "recover-agent") {
+    recoverAgentFromSpace(target.dataset.space);
+  }
+  if (action === "start-special-move") {
+    startSpecialMove(target.dataset.space);
+  }
+  if (action === "cancel-special-move") {
+    state.pendingSpecialMove = null;
+    render();
+  }
   if (action === "set-special-owner") {
     setSpecialOwner(target.dataset.agent, target.dataset.owner);
     render();
@@ -1184,6 +1233,9 @@ function handleAction(action, target) {
 function render() {
   document.body.classList.toggle("is-configured", Boolean(state.configured));
   state.decisionMode = "quick";
+  state.customSlotCount = normalizeCustomSlotCount(state.customSlotCount, state.occupied);
+  state.specialPlaceOwner = normalizeOccupantOwner(state.specialPlaceOwner);
+  state.pendingSpecialMove = normalizePendingSpecialMove(state.pendingSpecialMove);
   els.moduleSelect.value = state.module;
   state.firstPlayer = normalizePlayer(state.firstPlayer);
   syncSetupFirstPlayerButtons();
@@ -1492,7 +1544,7 @@ function boardDisplayItems() {
       boardSpaceItem("aurora"),
       boardGroupItem("harbor", "深水港", ["harbor1", "harbor2", "harbor3"], compactGroupOptions(["1", "2", "3"])),
       boardSpaceItem("builder"),
-      boardGroupItem("custom", "高级建筑 / 临时行动", customActionSpaces, { sharedTitle: true }),
+      boardGroupItem("custom", "高级建筑 / 临时行动", customActionSpaces(), { sharedTitle: true, custom: true }),
     ];
   }
 
@@ -1512,7 +1564,7 @@ function boardDisplayItems() {
     }
     items.push(boardSpaceItem(spaceId));
   }
-  items.push(boardGroupItem("custom", "高级建筑 / 临时行动", customActionSpaces, { sharedTitle: true }));
+  items.push(boardGroupItem("custom", "高级建筑 / 临时行动", customActionSpaces(), { sharedTitle: true, custom: true }));
   return items;
 }
 
@@ -1521,7 +1573,7 @@ function boardSpaceItem(space, className = "") {
 }
 
 function boardGroupItem(key, label, spaces, options = {}) {
-  return { type: "group", key: `group:${key}:${spaces.join(",")}:${options.compact ? "compact" : "wide"}`, label, spaces, options };
+  return { type: "group", key: `group:${key}:${spaces.join(",")}:${options.compact ? "compact" : "wide"}:${options.custom ? "custom" : "plain"}`, label, spaces, options };
 }
 
 function compactGroupOptions(segmentLabels) {
@@ -1529,11 +1581,12 @@ function compactGroupOptions(segmentLabels) {
 }
 
 function spaceGroupHtml(label, spaces, options = {}) {
-  const classes = ["space-group", options.compact ? "compact" : "", options.sharedTitle ? "has-title" : ""].filter(Boolean).join(" ");
+  const classes = ["space-group", options.compact ? "compact" : "", options.sharedTitle ? "has-title" : "", options.custom ? "custom-action-group" : ""].filter(Boolean).join(" ");
   return `
     <div class="${classes}" aria-label="${escapeHtml(label)}">
       ${options.sharedTitle ? `<span class="space-group-title">${escapeHtml(label)}</span>` : ""}
       ${spaces.map((spaceId, index) => spaceButtonHtml(spaceId, "space-segment", { label: options.segmentLabels?.[index] })).join("")}
+      ${options.custom ? `<div class="custom-group-tools"><button class="ghost tiny" data-action="add-custom-slot" type="button">添加临时工位</button></div>` : ""}
     </div>
   `;
 }
@@ -1573,7 +1626,7 @@ function updateBoardOccupancy() {
 function ownerLabel(owner) {
   if (owner === "shadow") return "暗影领主占用";
   if (owner === "human") return "我占用";
-  if (owner === "ambassador") return "大使占用";
+  if (owner === "ambassador") return "大使/特殊占用";
   return "空";
 }
 
@@ -1591,12 +1644,57 @@ function renderSpecialAgentTools() {
   els.specialAgentTools.innerHTML = `
     <div>
       <strong>标记与特殊代理人</strong>
-      <span>按实体桌面校正当前归属；先手标记决定后续轮开始谁先行动。</span>
+      <span>按实体桌面校正当前归属；先手标记决定后续轮开始谁先行动。遇到卡牌改变代理人位置时，打开特殊调整。</span>
     </div>
     <div class="special-agent-rows">
       ${firstPlayerOwnerRow()}
       ${specialAgentOwnerRow("lieutenant", "副官", "icon-lieutenant.png", state.special.lieutenantOwner)}
       ${specialAgentOwnerRow("ambassador", "大使", "icon-ambassador.png", state.special.ambassadorOwner)}
+    </div>
+    <div class="special-adjust-summary">
+      <button class="${state.specialAdjust ? "secondary" : "ghost"} tiny" data-action="toggle-special-adjust" type="button">${state.specialAdjust ? "结束特殊调整" : "特殊调整"}</button>
+      <button class="ghost tiny" data-action="add-custom-slot" type="button">添加临时工位</button>
+    </div>
+    ${state.specialAdjust ? specialAdjustPanelHtml() : ""}
+  `;
+}
+
+function specialAdjustPanelHtml() {
+  const move = normalizePendingSpecialMove(state.pendingSpecialMove);
+  state.pendingSpecialMove = move;
+  const occupied = Object.entries(state.occupied || {})
+    .filter(([, owner]) => owner)
+    .sort(([a], [b]) => boardSortValue(a) - boardSortValue(b));
+  const placeOwner = normalizeOccupantOwner(state.specialPlaceOwner);
+  return `
+    <div class="special-adjust-panel">
+      <div class="adjust-toolbar" role="group" aria-label="补记一次指派">
+        <span>补记指派</span>
+        ${specialPlaceButton("human", "我", placeOwner)}
+        ${specialPlaceButton("shadow", "暗影领主", placeOwner)}
+        ${specialPlaceButton("ambassador", "大使/特殊", placeOwner)}
+        ${placeOwner ? `<button class="ghost tiny" data-action="set-special-place-owner" data-owner="" type="button">取消</button>` : ""}
+      </div>
+      ${move ? `<p class="adjust-hint">正在移动 ${escapeHtml(displaySpaceName(move.from))} 的${escapeHtml(ownerShortLabel(move.owner))}；请选择一个空位，或取消移动。</p>
+        <button class="ghost tiny" data-action="cancel-special-move" type="button">取消移动</button>` : ""}
+      ${placeOwner ? `<p class="adjust-hint">请选择一个空位，补记${escapeHtml(ownerShortLabel(placeOwner))}的一次额外指派。用于样品、卡牌额外部署、待购建筑临时行动等。</p>` : ""}
+      <div class="adjust-list">
+        ${occupied.length ? occupied.map(([spaceId, owner]) => specialAdjustRowHtml(spaceId, owner)).join("") : `<span class="adjust-empty">当前没有已占用行动格。</span>`}
+      </div>
+    </div>
+  `;
+}
+
+function specialPlaceButton(owner, label, current) {
+  return `<button class="${owner === current ? "secondary" : "ghost"} tiny" data-action="set-special-place-owner" data-owner="${owner}" type="button">${label}</button>`;
+}
+
+function specialAdjustRowHtml(spaceId, owner) {
+  return `
+    <div class="adjust-row">
+      <span><strong>${escapeHtml(displaySpaceName(spaceId))}</strong><small>${escapeHtml(ownerLabel(owner))}</small></span>
+      <button class="ghost tiny" data-action="start-special-move" data-space="${spaceId}" type="button">移动</button>
+      <button class="danger tiny" data-action="recover-agent" data-space="${spaceId}" type="button">回收</button>
     </div>
   `;
 }
@@ -2056,10 +2154,20 @@ function addHarbor(space, owner) {
 }
 
 function occupyManualActionSpace(owner) {
-  const space = customActionSpaces.find((spaceId) => !state.occupied[spaceId]);
+  let space = customActionSpaces().find((spaceId) => !state.occupied[spaceId]);
+  if (!space) {
+    state.customSlotCount = normalizeCustomSlotCount(state.customSlotCount, state.occupied) + 1;
+    space = customSlotId(state.customSlotCount);
+  }
   if (!space) return null;
   occupySpace(space, owner);
   return space;
+}
+
+function addCustomSlot() {
+  state.customSlotCount = normalizeCustomSlotCount(state.customSlotCount, state.occupied) + 1;
+  addLog(`已添加${displaySpaceName(customSlotId(state.customSlotCount))}，可用于高级建筑、样品或其他卡牌临时行动。`);
+  render();
 }
 
 function resolveNextHarbor() {
@@ -2089,12 +2197,20 @@ function completeHarborReassign(space) {
 function handleSpaceSelection(spaceId) {
   const mode = boardPlacementMode();
   if (!mode || !canSelectSpace(spaceId, mode)) return;
+  if (mode.kind === "specialMove") moveAgentToSpace(spaceId);
+  if (mode.kind === "specialPlace") placeSpecialAgent(spaceId, mode.owner);
   if (mode.kind === "human") selectHumanSpace(spaceId);
   if (mode.kind === "harbor") selectHumanHarborReassign(spaceId);
   if (mode.kind === "ambassador") selectAmbassadorSpace(spaceId);
 }
 
 function boardPlacementMode() {
+  if (state.specialAdjust) {
+    const move = normalizePendingSpecialMove(state.pendingSpecialMove);
+    if (move) return { kind: "specialMove", from: move.from, owner: move.owner };
+    const owner = normalizeOccupantOwner(state.specialPlaceOwner);
+    if (owner) return { kind: "specialPlace", owner };
+  }
   if (state.phase === "humanTurn") return { kind: "human" };
   if (state.phase === "ambassador") return { kind: "ambassador" };
   if (state.phase === "harbor") {
@@ -2107,10 +2223,102 @@ function boardPlacementMode() {
 function canSelectSpace(spaceId, mode = boardPlacementMode()) {
   if (!spaceId || !mode) return false;
   const owner = state.occupied[spaceId];
+  if (mode.kind === "specialMove") return spaceId !== mode.from && !owner;
+  if (mode.kind === "specialPlace") return !owner;
   if (mode.kind === "human") return !owner || state.pendingHumanSpace === spaceId;
   if (mode.kind === "harbor") return targetForSpace(spaceId) !== "harbor" && (!owner || state.pendingHarborTarget === spaceId);
   if (mode.kind === "ambassador") return !owner || state.pendingAmbassadorSpace === spaceId;
   return false;
+}
+
+function toggleSpecialAdjust() {
+  state.specialAdjust = !state.specialAdjust;
+  state.pendingSpecialMove = null;
+  state.specialPlaceOwner = null;
+  addLog(state.specialAdjust ? "已进入特殊调整：可补记、移动或回收代理人。" : "已结束特殊调整。");
+  render();
+}
+
+function setSpecialPlaceOwner(owner) {
+  state.specialAdjust = true;
+  state.pendingSpecialMove = null;
+  state.specialPlaceOwner = normalizeOccupantOwner(owner);
+  render();
+}
+
+function startSpecialMove(spaceId) {
+  const owner = normalizeOccupantOwner(state.occupied?.[spaceId]);
+  if (!owner) return;
+  state.specialAdjust = true;
+  state.specialPlaceOwner = null;
+  state.pendingSpecialMove = { from: spaceId, owner };
+  render();
+}
+
+function moveAgentToSpace(spaceId) {
+  const move = normalizePendingSpecialMove(state.pendingSpecialMove);
+  if (!move || state.occupied[spaceId]) return;
+  moveOccupiedSpace(move.from, spaceId, move.owner);
+  addLog(`特殊调整：已把${ownerShortLabel(move.owner)}从 ${displaySpaceName(move.from)} 移到 ${displaySpaceName(spaceId)}。`);
+  state.pendingSpecialMove = null;
+  render();
+}
+
+function placeSpecialAgent(spaceId, owner) {
+  const normalized = normalizeOccupantOwner(owner);
+  if (!normalized || state.occupied[spaceId]) return;
+  occupySpace(spaceId, normalized);
+  if (normalized === "human" || normalized === "shadow") {
+    state.agents[normalized] = Math.min(totalAgentsFor(normalized), (state.agents[normalized] || 0) + 1);
+  }
+  if (normalized === "ambassador") state.special.ambassadorSpace = spaceId;
+  addLog(`特殊调整：已补记${ownerShortLabel(normalized)}指派到 ${displaySpaceName(spaceId)}。`);
+  state.specialPlaceOwner = null;
+  render();
+}
+
+function recoverAgentFromSpace(spaceId) {
+  const owner = state.occupied?.[spaceId];
+  if (!owner) return;
+  const released = releaseOccupiedSpace(spaceId, { returnToPool: true });
+  if (!released) return;
+  addLog(`特殊调整：已从 ${displaySpaceName(spaceId)} 回收${ownerShortLabel(released.owner)}。`);
+  render();
+}
+
+function moveOccupiedSpace(from, to, owner = state.occupied?.[from]) {
+  const normalized = normalizeOccupantOwner(owner);
+  if (!normalized || !from || !to || state.occupied[to]) return;
+  releaseOccupiedSpace(from, { returnToPool: false });
+  occupySpace(to, normalized);
+  replacePendingSpaceReference(from, to);
+}
+
+function releaseOccupiedSpace(spaceId, options = {}) {
+  const owner = normalizeOccupantOwner(state.occupied?.[spaceId]);
+  if (!owner) return null;
+  const pendingHuman = state.pendingHumanSpace === spaceId;
+  const pendingHarborTarget = state.pendingHarborTarget === spaceId;
+  const pendingAmbassador = state.pendingAmbassadorSpace === spaceId;
+  delete state.occupied[spaceId];
+  state.harborQueue = state.harborQueue.filter((item) => item.space !== spaceId);
+  if (pendingHuman) state.pendingHumanSpace = null;
+  if (pendingHarborTarget) state.pendingHarborTarget = null;
+  if (pendingAmbassador) state.pendingAmbassadorSpace = null;
+  if (state.pending?.spaceId === spaceId) state.pending.spaceId = null;
+  if (state.special.ambassadorSpace === spaceId) state.special.ambassadorSpace = null;
+  if (options.returnToPool && (owner === "human" || owner === "shadow") && !pendingHuman && !pendingHarborTarget) {
+    state.agents[owner] = Math.max(0, (state.agents[owner] || 0) - 1);
+  }
+  return { owner };
+}
+
+function replacePendingSpaceReference(from, to) {
+  if (state.pendingHumanSpace === from) state.pendingHumanSpace = to;
+  if (state.pendingHarborTarget === from) state.pendingHarborTarget = to;
+  if (state.pendingAmbassadorSpace === from) state.pendingAmbassadorSpace = to;
+  if (state.pending?.spaceId === from) state.pending.spaceId = to;
+  if (state.special.ambassadorSpace === from) state.special.ambassadorSpace = to;
 }
 
 function selectHumanSpace(spaceId) {
@@ -2329,12 +2537,14 @@ function spacesForTarget(target) {
 function targetForSpace(spaceId) {
   if (spaceId === "manualAdvanced") return "advanced";
   if (spaceId?.startsWith("adv_")) return "advanced";
+  if (isCustomActionSpace(spaceId)) return "custom";
   return spaceDefs[spaceId]?.target;
 }
 
 function displaySpaceName(spaceId) {
   if (!spaceId) return "无可用行动格";
   if (spaceId === "manualAdvanced") return "高级建筑（实体桌面选择）";
+  if (isCustomActionSpace(spaceId)) return `临时工位 ${customSlotNumber(spaceId)}`;
   if (spaceId.startsWith("adv_")) {
     const item = state.advanced[Number(spaceId.slice(4))];
     const card = item ? cardById.get(item.id) : null;
@@ -2346,7 +2556,7 @@ function displaySpaceName(spaceId) {
 function actionHintForSpace(spaceId) {
   if (!spaceId) return "请手动判定";
   if (spaceId === "manualAdvanced") return "按实体桌面选择并执行高级建筑";
-  if (customActionSpaces.includes(spaceId)) return "占位：高级建筑、样品待购建筑或其他临时行动";
+  if (isCustomActionSpace(spaceId)) return "占位：高级建筑、样品待购建筑或其他临时行动";
   if (spaceId.startsWith("adv_")) {
     const item = state.advanced[Number(spaceId.slice(4))];
     const card = item ? cardById.get(item.id) : null;
@@ -2370,7 +2580,7 @@ function actionHintForSpaceHtml(spaceId) {
 
 function spaceEffectHtml(spaceId) {
   if (!spaceId) return "";
-  const effects = spaceId === "manualAdvanced" || spaceId.startsWith("adv_") ? ["building"] : (spaceDefs[spaceId]?.effects || []);
+  const effects = spaceId === "manualAdvanced" || spaceId.startsWith("adv_") || isCustomActionSpace(spaceId) ? ["building"] : (spaceDefs[spaceId]?.effects || []);
   if (!effects.length) return "";
   return `
     <span class="space-effects" aria-label="${escapeHtml(actionHintForSpace(spaceId))}">
@@ -2440,7 +2650,33 @@ function artForSpace(spaceId) {
   if (!spaceId) return "icon-waterdeep.png";
   if (spaceId === "manualAdvanced") return "ui-building-card.webp";
   if (spaceId.startsWith("adv_")) return "ui-building-card.webp";
+  if (isCustomActionSpace(spaceId)) return "ui-building-card.webp";
   return targetArt[targetForSpace(spaceId)] || "icon-waterdeep.png";
+}
+
+function boardSortValue(spaceId) {
+  if (isCustomActionSpace(spaceId)) return 1000 + customSlotNumber(spaceId);
+  if (spaceId?.startsWith("adv_")) return 900 + Number(spaceId.slice(4));
+  const index = currentOrder().indexOf(spaceId);
+  return index >= 0 ? index : 2000;
+}
+
+function normalizeOccupantOwner(owner) {
+  return ["human", "shadow", "ambassador"].includes(owner) ? owner : null;
+}
+
+function normalizePendingSpecialMove(move) {
+  const owner = normalizeOccupantOwner(move?.owner);
+  const from = move?.from;
+  if (!owner || !from || state.occupied?.[from] !== owner) return null;
+  return { from, owner };
+}
+
+function ownerShortLabel(owner) {
+  if (owner === "human") return "你的代理人";
+  if (owner === "shadow") return "暗影领主代理人";
+  if (owner === "ambassador") return "大使/特殊代理人";
+  return "代理人";
 }
 
 function harborOrder(spaceId) {
@@ -2667,6 +2903,10 @@ function loadState() {
     next.pendingHumanSpace = next.pendingHumanSpace || null;
     next.pendingHarborTarget = next.pendingHarborTarget || null;
     next.pendingAmbassadorSpace = next.pendingAmbassadorSpace || null;
+    next.customSlotCount = normalizeCustomSlotCount(next.customSlotCount, next.occupied);
+    next.specialAdjust = Boolean(next.specialAdjust);
+    next.specialPlaceOwner = normalizeOccupantOwner(next.specialPlaceOwner);
+    next.pendingSpecialMove = normalizePendingSpecialMoveForState(next.pendingSpecialMove, next);
     if (next.configured && next.round === 1 && (next.agents?.shadow || 0) === 0) {
       if (next.pending?.kind === "shadowAction" && next.pending.forcedByNoQuest) {
         next.pending = null;
@@ -2680,6 +2920,13 @@ function loadState() {
   } catch {
     return null;
   }
+}
+
+function normalizePendingSpecialMoveForState(move, sourceState) {
+  const owner = ["human", "shadow", "ambassador"].includes(move?.owner) ? move.owner : null;
+  const from = move?.from;
+  if (!owner || !from || sourceState?.occupied?.[from] !== owner) return null;
+  return { from, owner };
 }
 
 function renumberAdvancedOccupancy(occupied) {

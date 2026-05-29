@@ -808,6 +808,23 @@ body.is-configured .main-grid {
   font-size: 10px;
 }
 
+.space-group.custom-action-group {
+  grid-template-columns: repeat(auto-fit, minmax(156px, 1fr));
+}
+
+.custom-action-group .custom-group-tools {
+  align-items: center;
+  border-top: 1px solid rgba(94, 62, 30, 0.18);
+  display: flex;
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+  padding: 6px;
+}
+
+.custom-action-group .space-btn {
+  min-height: 78px;
+}
+
 .space-btn.board-centered {
   grid-column: 1 / -1;
   justify-self: center;
@@ -946,7 +963,7 @@ body.is-configured .main-grid {
   padding: 9px;
 }
 
-.special-agent-tools div:first-child {
+.special-agent-tools > div:first-child {
   display: grid;
   gap: 2px;
   min-width: min(100%, 360px);
@@ -967,6 +984,14 @@ body.is-configured .main-grid {
   display: grid;
   gap: 7px;
   min-width: min(100%, 390px);
+}
+
+.special-adjust-summary {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
 }
 
 .special-agent-row {
@@ -1016,6 +1041,71 @@ body.is-configured .main-grid {
 
 .segmented-control button:last-child {
   border-radius: 0 6px 6px 0;
+}
+
+.special-adjust-panel {
+  border-top: 1px solid rgba(94, 62, 30, 0.18);
+  display: grid;
+  flex-basis: 100%;
+  gap: 8px;
+  padding-top: 9px;
+}
+
+.adjust-toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.adjust-toolbar > span {
+  color: var(--mahogany);
+  font-weight: 900;
+  margin-right: 2px;
+}
+
+.adjust-hint {
+  background: rgba(255, 249, 230, 0.72);
+  border: 1px solid rgba(94, 62, 30, 0.16);
+  border-radius: 6px;
+  color: #3e2f22;
+  line-height: 1.45;
+  padding: 7px 8px;
+}
+
+.adjust-list {
+  display: grid;
+  gap: 6px;
+}
+
+.adjust-row {
+  align-items: center;
+  background: rgba(255, 250, 232, 0.62);
+  border: 1px solid rgba(94, 62, 30, 0.16);
+  border-radius: 7px;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  padding: 7px;
+}
+
+.adjust-row span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.adjust-row strong {
+  color: #2f2118;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.adjust-row small,
+.adjust-empty {
+  color: var(--ink-soft);
+  font-size: 12px;
 }
 
 .resource-grid {
