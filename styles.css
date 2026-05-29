@@ -821,6 +821,40 @@ body.is-configured .main-grid {
   padding: 6px;
 }
 
+.advanced-slot-wrap {
+  border-left: 1px solid rgba(94, 62, 30, 0.2);
+  display: grid;
+  grid-template-rows: minmax(78px, auto) auto;
+  min-width: 0;
+}
+
+.advanced-slot-wrap:first-of-type {
+  border-left: 0;
+}
+
+.advanced-slot-wrap .space-btn {
+  width: 100%;
+}
+
+.advanced-name-field {
+  background: rgba(255, 250, 232, 0.52);
+  border-top: 1px solid rgba(94, 62, 30, 0.18);
+  display: grid;
+  gap: 4px;
+  padding: 6px;
+}
+
+.advanced-name-field span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.advanced-name-field input {
+  min-height: 30px;
+  padding: 3px 7px;
+}
+
 .custom-action-group .space-btn {
   min-height: 78px;
 }

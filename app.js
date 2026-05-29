@@ -19,7 +19,7 @@ const advTypes = ["c", "f", "r", "w"];
 const targetNames = {
   cliffwatch: "崖望旅馆",
   advanced: "高级建筑",
-  custom: "高级建筑 / 临时行动",
+  custom: "高级建筑",
   grinning: "笑狮酒馆",
   plinth: "尖碑塔",
   aurora: "极光领域商店",
@@ -154,7 +154,7 @@ const boardImageAssets = Array.from(new Set([
   "icon-lieutenant.png",
 ]));
 
-const MIN_CUSTOM_ACTION_SLOTS = 3;
+const MIN_CUSTOM_ACTION_SLOTS = 0;
 
 function customSlotId(number) {
   return `custom${number}`;
@@ -179,6 +179,20 @@ function customActionSpaces() {
   return Array.from({ length: count }, (_, index) => customSlotId(index + 1));
 }
 
+function customSlotNames() {
+  if (!state.customSlotNames || typeof state.customSlotNames !== "object") state.customSlotNames = {};
+  return state.customSlotNames;
+}
+
+function customSlotName(spaceId) {
+  return customSlotNames()[spaceId]?.trim() || `高级建筑 ${customSlotNumber(spaceId)}`;
+}
+
+function customNamesSignature() {
+  const names = customSlotNames();
+  return customActionSpaces().map((spaceId) => `${spaceId}:${names[spaceId] || ""}`).join("|");
+}
+
 const spaceDefs = {
   cliffA: { target: "cliffwatch", name: "崖望旅馆 A", detail: "拿 1 任务 + 2 金币", effects: ["quest", "g", "g"] },
   cliffB: { target: "cliffwatch", name: "崖望旅馆 B", detail: "拿 1 任务 + 1 阴谋", effects: ["quest", "intrigue"] },
@@ -199,9 +213,9 @@ const spaceDefs = {
   hallVoice: { target: "hallVoice", name: "声言之庭", detail: "任务、阴谋、5 金币、腐化", effects: ["quest", "intrigue", "g", "g", "g", "g", "g", "x"] },
   skullIsland: { target: "skullIsland", name: "骷髅岛", detail: "2 任意冒险者 + 腐化", effects: ["any", "any", "x"] },
   slaversMarket: { target: "slaversMarket", name: "奴隶市场", detail: "2 战士、2 盗贼、腐化", effects: ["f", "f", "r", "r", "x"] },
-  custom1: { target: "custom", name: "自定义行动 1", detail: "高级建筑、样品待购建筑或其他临时行动", effects: ["building"] },
-  custom2: { target: "custom", name: "自定义行动 2", detail: "高级建筑、样品待购建筑或其他临时行动", effects: ["building"] },
-  custom3: { target: "custom", name: "自定义行动 3", detail: "高级建筑、样品待购建筑或其他临时行动", effects: ["building"] },
+  custom1: { target: "custom", name: "高级建筑 1", detail: "按高级建筑牌面执行", effects: ["building"] },
+  custom2: { target: "custom", name: "高级建筑 2", detail: "按高级建筑牌面执行", effects: ["building"] },
+  custom3: { target: "custom", name: "高级建筑 3", detail: "按高级建筑牌面执行", effects: ["building"] },
 };
 
 const clockwiseOrder = [
@@ -353,6 +367,7 @@ function defaultState() {
     pendingAmbassadorSpace: null,
     pending: null,
     customSlotCount: MIN_CUSTOM_ACTION_SLOTS,
+    customSlotNames: {},
     specialAdjust: false,
     specialPlaceOwner: null,
     pendingSpecialMove: null,
@@ -462,6 +477,10 @@ function bindEvents() {
 
   document.addEventListener("change", (event) => {
     const target = event.target;
+    if (target.dataset.customName) {
+      setCustomSlotName(target.dataset.customName, target.value, true);
+      return;
+    }
     if (target.dataset.cliffSlot) {
       state.cliffwatch[Number(target.dataset.cliffSlot)] = target.value || null;
       render();
@@ -493,6 +512,10 @@ function bindEvents() {
 
   document.addEventListener("input", (event) => {
     const target = event.target;
+    if (target.dataset.customName) {
+      setCustomSlotName(target.dataset.customName, target.value, false);
+      return;
+    }
     if (!isScoreInputTarget(target)) return;
     applyScoreInput(target);
     refreshFinalScoreNumbers();
@@ -715,7 +738,7 @@ function planShadowAction(options = {}) {
 
 function resolveTarget(target, options = {}) {
   if (target === "advanced") {
-    return { spaceId: "manualAdvanced", d10: die(10), fallback: false, manualAdvanced: true };
+    return resolveMaintainedAdvancedTarget();
   }
 
   const spaces = spacesForTarget(target);
@@ -736,6 +759,19 @@ function resolveAdvancedTarget() {
     if (!state.occupied[spaceId]) return { spaceId, d10: roll, fallback: offset > 0 };
   }
   return null;
+}
+
+function resolveMaintainedAdvancedTarget() {
+  const spaces = customActionSpaces();
+  const roll = die(10);
+  if (!spaces.length) return { spaceId: "manualAdvanced", d10: roll, fallback: false, manualAdvanced: true };
+  const startIndex = (roll - 1) % spaces.length;
+  for (let offset = 0; offset < spaces.length; offset += 1) {
+    const index = (startIndex + offset) % spaces.length;
+    const spaceId = spaces[index];
+    if (!state.occupied[spaceId]) return { spaceId, d10: roll, fallback: offset > 0, maintainedAdvanced: true };
+  }
+  return { spaceId: null, d10: roll, fallback: true, advancedBlocked: true };
 }
 
 function fallbackFrom(spaceId, options = {}) {
@@ -760,12 +796,12 @@ function confirmShadowAction() {
   }
 
   if (pending.manualAdvanced) {
-    const recordSpace = occupyManualActionSpace(pending.ambassadorAction ? "ambassador" : "shadow");
+    const recordSpace = occupyManualActionSpace(pending.ambassadorAction ? "ambassador" : "shadow", "未记录建筑");
     if (recordSpace) {
       pending.spaceId = recordSpace;
-      addLog(`暗影领主指派到高级建筑。已用 ${displaySpaceName(recordSpace)} 记录占用；请按实体桌面选择建筑并执行牌面效果。`);
+      addLog(`暗影领主指派到高级建筑。已用 ${displaySpaceName(recordSpace)} 记录占用；请编辑建筑名并按实体桌面执行牌面效果。`);
     } else {
-      addLog("暗影领主指派到高级建筑。自定义行动占位已满，请按实体桌面选择建筑并记住该占用。");
+      addLog("暗影领主指派到高级建筑。请按实体桌面选择建筑并记住该占用。");
     }
     finishShadowAction(pending.harborReassign, { ambassadorAction: pending.ambassadorAction });
     render();
@@ -1234,6 +1270,7 @@ function render() {
   document.body.classList.toggle("is-configured", Boolean(state.configured));
   state.decisionMode = "quick";
   state.customSlotCount = normalizeCustomSlotCount(state.customSlotCount, state.occupied);
+  state.customSlotNames = normalizeCustomSlotNames(state.customSlotNames);
   state.specialPlaceOwner = normalizeOccupantOwner(state.specialPlaceOwner);
   state.pendingSpecialMove = normalizePendingSpecialMove(state.pendingSpecialMove);
   els.moduleSelect.value = state.module;
@@ -1263,7 +1300,7 @@ function primaryActionConfig() {
   if (state.pending?.kind === "quickQuest") return { label: "已处理，继续" };
   if (state.pending?.kind === "quickBuilder") return { label: "请在上方选择", disabled: true };
   if (state.pending?.kind === "shadowQuestCheck") return { label: "请完成任务检查", disabled: true };
-  if (state.pending?.kind === "shadowAction") return { label: "确认已执行" };
+  if (state.pending?.kind === "shadowAction") return state.pending.advancedBlocked ? { label: "请重掷 / 重新判定", disabled: true } : { label: "确认已执行" };
   if (state.phase === "startRound") return { label: "开始本轮" };
   if (state.phase === "ambassador") return { label: state.pendingAmbassadorSpace ? "大使行动已执行" : "先选择大使行动格", disabled: !state.pendingAmbassadorSpace };
   if (state.phase === "shadowTurn") return { label: "判定行动" };
@@ -1380,8 +1417,19 @@ function renderNextCard() {
           `占用的高级建筑也参与计数。用 ${dicePill(10, pending.d10)} 数到对应建筑；若该建筑已占用，就沿同一顺序顺延到下一个未占用高级建筑。`,
           `如果所有已建成高级建筑都已占用，没有可用高级建筑，就重掷行动骰。`,
           `执行该建筑牌面；拥有者收益、费用和特殊效果都在实体桌面处理。`,
-          `${inlineEffect("building")} 确认后，应用会用版图底部的“高级建筑 / 临时行动”空位记录这次占用。`,
+          `${inlineEffect("building")} 确认后，应用会在版图底部的“高级建筑”区域记录这次占用；可以随后编辑建筑名。`,
         ]
+      : pending.advancedBlocked
+        ? [
+            `按 ${dicePill(10, pending.d10)} 检查下方高级建筑列表，但所有已记录高级建筑都已占用。`,
+            `按 solo 规则没有可用高级建筑时，重掷行动骰；也可以先添加漏记的高级建筑后重新判定。`,
+          ]
+      : pending.maintainedAdvanced
+        ? [
+            `执行：${actionHintForSpaceHtml(pending.spaceId)}`,
+            `按 ${dicePill(10, pending.d10)} 在下方高级建筑列表中数到 ${escapeHtml(displaySpaceName(pending.spaceId))}${pending.fallback ? "；骰中建筑已占用，所以顺延到此建筑" : ""}。`,
+            `${inlineEffect("arrow")} 执行完后点击确认，下一步会进入回合末任务检查。`,
+          ]
       : [
           `执行：${actionHintForSpaceHtml(pending.spaceId)}`,
           `${inlineEffect("arrow")} 执行完后点击确认，下一步会进入回合末任务检查。`,
@@ -1391,10 +1439,10 @@ function renderNextCard() {
       <h3>${escapeHtml(finalSpace)}</h3>
       ${diceTrayHtml(dice)}
       <p>${pending.forcedCliff ? "暗影领主没有进行中任务，本次必须去崖望旅馆。" : `目标：${escapeHtml(target)}。`}
-      ${pending.fallback ? "原目标被占，已按顺时针顺延到下一空位。" : ""}</p>
+      ${pending.fallback && !pending.maintainedAdvanced && !pending.advancedBlocked ? "原目标被占，已按顺时针顺延到下一空位。" : ""}</p>
       ${guideList(actionGuides)}
       <div class="button-row" style="margin-top:12px">
-        <button class="primary" data-action="confirm-shadow" type="button">确认已执行</button>
+        ${pending.advancedBlocked ? "" : `<button class="primary" data-action="confirm-shadow" type="button">确认已执行</button>`}
         <button class="secondary" data-action="reroll-shadow" type="button">重掷 / 重新判定</button>
       </div>
     `;
@@ -1431,7 +1479,7 @@ function renderNextCard() {
       <h3>本轮开始前先指派大使</h3>
       ${guideList([
         "在版图上选择一个未占用行动格，放置大使并执行该行动。",
-        "如果大使去已建成高级建筑或其他临时行动，选择底部“高级建筑 / 临时行动”的一个空位。",
+        "如果大使去已建成高级建筑，选择底部“高级建筑”里的对应建筑；若还没有记录，先添加建筑。",
         "大使执行行动后，占用该行动格；它对所有玩家都算作对手代理人。",
         "如果把大使放到深水港，它不会在轮末重指派。",
         state.pendingAmbassadorSpace ? `已选择：${escapeHtml(displaySpaceName(state.pendingAmbassadorSpace))}。` : "当前可选行动格已经高亮。",
@@ -1446,7 +1494,7 @@ function renderNextCard() {
       <h3>指派 1 个代理人</h3>
       <ul>
         <li>在版图上选择一个高亮的未占用行动格，放置你的代理人并执行该行动。</li>
-        <li>如果你去已建成高级建筑，或用样品等效果指派到待购建筑，选择底部“高级建筑 / 临时行动”的一个空位。</li>
+        <li>如果你去已建成高级建筑，或用样品等效果指派到待购建筑，选择底部“高级建筑”里的对应建筑；若还没有记录，先添加建筑。</li>
         <li>你可以完成 1 个任务；若去了深水港，稍后会进入港口重指派。</li>
         <li>${state.pendingHumanSpace ? `已选择：${escapeHtml(displaySpaceName(state.pendingHumanSpace))}。` : "选择行动格后，下方按钮才会继续。"}</li>
       </ul>
@@ -1500,7 +1548,7 @@ function renderHarborCard() {
   } else {
     els.nextCard.innerHTML = `
       <h3>你的 ${displaySpaceName(next.space)}</h3>
-      <p>在版图上选择一个非深水港的高亮空位，重指派该代理人，执行行动并最多完成 1 个任务。若去高级建筑或临时行动，使用底部占位格。</p>
+      <p>在版图上选择一个非深水港的高亮空位，重指派该代理人，执行行动并最多完成 1 个任务。若去高级建筑，选择底部“高级建筑”里的对应建筑。</p>
       ${state.pendingHarborTarget ? `<p>已选择：${escapeHtml(displaySpaceName(state.pendingHarborTarget))}。</p>` : ""}
       <div class="button-row" style="margin-top:12px">
         <button class="primary" data-action="harbor-done" type="button" ${state.pendingHarborTarget ? "" : "disabled"}>该港口代理人已处理</button>
@@ -1544,7 +1592,7 @@ function boardDisplayItems() {
       boardSpaceItem("aurora"),
       boardGroupItem("harbor", "深水港", ["harbor1", "harbor2", "harbor3"], compactGroupOptions(["1", "2", "3"])),
       boardSpaceItem("builder"),
-      boardGroupItem("custom", "高级建筑 / 临时行动", customActionSpaces(), { sharedTitle: true, custom: true }),
+      boardGroupItem("custom", "高级建筑", customActionSpaces(), { sharedTitle: true, custom: true, keySuffix: customNamesSignature() }),
     ];
   }
 
@@ -1564,7 +1612,7 @@ function boardDisplayItems() {
     }
     items.push(boardSpaceItem(spaceId));
   }
-  items.push(boardGroupItem("custom", "高级建筑 / 临时行动", customActionSpaces(), { sharedTitle: true, custom: true }));
+  items.push(boardGroupItem("custom", "高级建筑", customActionSpaces(), { sharedTitle: true, custom: true, keySuffix: customNamesSignature() }));
   return items;
 }
 
@@ -1573,7 +1621,7 @@ function boardSpaceItem(space, className = "") {
 }
 
 function boardGroupItem(key, label, spaces, options = {}) {
-  return { type: "group", key: `group:${key}:${spaces.join(",")}:${options.compact ? "compact" : "wide"}:${options.custom ? "custom" : "plain"}`, label, spaces, options };
+  return { type: "group", key: `group:${key}:${spaces.join(",")}:${options.compact ? "compact" : "wide"}:${options.custom ? "custom" : "plain"}:${options.keySuffix || ""}`, label, spaces, options };
 }
 
 function compactGroupOptions(segmentLabels) {
@@ -1585,8 +1633,20 @@ function spaceGroupHtml(label, spaces, options = {}) {
   return `
     <div class="${classes}" aria-label="${escapeHtml(label)}">
       ${options.sharedTitle ? `<span class="space-group-title">${escapeHtml(label)}</span>` : ""}
-      ${spaces.map((spaceId, index) => spaceButtonHtml(spaceId, "space-segment", { label: options.segmentLabels?.[index] })).join("")}
-      ${options.custom ? `<div class="custom-group-tools"><button class="ghost tiny" data-action="add-custom-slot" type="button">添加临时工位</button></div>` : ""}
+      ${spaces.map((spaceId, index) => options.custom ? advancedBuildingSlotHtml(spaceId) : spaceButtonHtml(spaceId, "space-segment", { label: options.segmentLabels?.[index] })).join("")}
+      ${options.custom ? `<div class="custom-group-tools"><button class="ghost tiny" data-action="add-custom-slot" type="button">添加高级建筑</button></div>` : ""}
+    </div>
+  `;
+}
+
+function advancedBuildingSlotHtml(spaceId) {
+  return `
+    <div class="advanced-slot-wrap">
+      ${spaceButtonHtml(spaceId, "space-segment")}
+      <label class="advanced-name-field">
+        <span>建筑名字</span>
+        <input data-custom-name="${spaceId}" value="${escapeHtml(customSlotNames()[spaceId] || "")}" placeholder="${escapeHtml(customSlotName(spaceId))}">
+      </label>
     </div>
   `;
 }
@@ -1653,7 +1713,7 @@ function renderSpecialAgentTools() {
     </div>
     <div class="special-adjust-summary">
       <button class="${state.specialAdjust ? "secondary" : "ghost"} tiny" data-action="toggle-special-adjust" type="button">${state.specialAdjust ? "结束特殊调整" : "特殊调整"}</button>
-      <button class="ghost tiny" data-action="add-custom-slot" type="button">添加临时工位</button>
+      <button class="ghost tiny" data-action="add-custom-slot" type="button">添加高级建筑</button>
     </div>
     ${state.specialAdjust ? specialAdjustPanelHtml() : ""}
   `;
@@ -1677,7 +1737,7 @@ function specialAdjustPanelHtml() {
       </div>
       ${move ? `<p class="adjust-hint">正在移动 ${escapeHtml(displaySpaceName(move.from))} 的${escapeHtml(ownerShortLabel(move.owner))}；请选择一个空位，或取消移动。</p>
         <button class="ghost tiny" data-action="cancel-special-move" type="button">取消移动</button>` : ""}
-      ${placeOwner ? `<p class="adjust-hint">请选择一个空位，补记${escapeHtml(ownerShortLabel(placeOwner))}的一次额外指派。用于样品、卡牌额外部署、待购建筑临时行动等。</p>` : ""}
+      ${placeOwner ? `<p class="adjust-hint">请选择一个空位，补记${escapeHtml(ownerShortLabel(placeOwner))}的一次额外指派。用于样品、卡牌额外部署、待购建筑行动等。</p>` : ""}
       <div class="adjust-list">
         ${occupied.length ? occupied.map(([spaceId, owner]) => specialAdjustRowHtml(spaceId, owner)).join("") : `<span class="adjust-empty">当前没有已占用行动格。</span>`}
       </div>
@@ -2153,21 +2213,43 @@ function addHarbor(space, owner) {
   state.harborQueue.push({ space, owner });
 }
 
-function occupyManualActionSpace(owner) {
+function occupyManualActionSpace(owner, name = "") {
   let space = customActionSpaces().find((spaceId) => !state.occupied[spaceId]);
   if (!space) {
     state.customSlotCount = normalizeCustomSlotCount(state.customSlotCount, state.occupied) + 1;
     space = customSlotId(state.customSlotCount);
   }
   if (!space) return null;
+  if (name && !customSlotNames()[space]) customSlotNames()[space] = name;
   occupySpace(space, owner);
   return space;
 }
 
 function addCustomSlot() {
   state.customSlotCount = normalizeCustomSlotCount(state.customSlotCount, state.occupied) + 1;
-  addLog(`已添加${displaySpaceName(customSlotId(state.customSlotCount))}，可用于高级建筑、样品或其他卡牌临时行动。`);
+  const spaceId = customSlotId(state.customSlotCount);
+  addLog(`已添加${displaySpaceName(spaceId)}；可以直接在高级建筑卡片下方填写建筑名。`);
   render();
+}
+
+function setCustomSlotName(spaceId, value, rerender = false) {
+  if (!isCustomActionSpace(spaceId)) return;
+  const name = String(value || "").trim();
+  if (name) customSlotNames()[spaceId] = name;
+  else delete customSlotNames()[spaceId];
+  if (rerender) render();
+  else {
+    updateCustomSlotLabel(spaceId);
+    saveState();
+  }
+}
+
+function updateCustomSlotLabel(spaceId) {
+  const button = els.boardGrid?.querySelector(`button[data-space="${spaceId}"]`);
+  const title = button?.querySelector(".space-copy strong");
+  if (title) title.textContent = displaySpaceName(spaceId);
+  const input = els.boardGrid?.querySelector(`input[data-custom-name="${spaceId}"]`);
+  if (input) input.placeholder = customSlotName(spaceId);
 }
 
 function resolveNextHarbor() {
@@ -2544,7 +2626,7 @@ function targetForSpace(spaceId) {
 function displaySpaceName(spaceId) {
   if (!spaceId) return "无可用行动格";
   if (spaceId === "manualAdvanced") return "高级建筑（实体桌面选择）";
-  if (isCustomActionSpace(spaceId)) return `临时工位 ${customSlotNumber(spaceId)}`;
+  if (isCustomActionSpace(spaceId)) return `高级建筑：${customSlotName(spaceId)}`;
   if (spaceId.startsWith("adv_")) {
     const item = state.advanced[Number(spaceId.slice(4))];
     const card = item ? cardById.get(item.id) : null;
@@ -2556,7 +2638,7 @@ function displaySpaceName(spaceId) {
 function actionHintForSpace(spaceId) {
   if (!spaceId) return "请手动判定";
   if (spaceId === "manualAdvanced") return "按实体桌面选择并执行高级建筑";
-  if (isCustomActionSpace(spaceId)) return "占位：高级建筑、样品待购建筑或其他临时行动";
+  if (isCustomActionSpace(spaceId)) return "按这座高级建筑牌面执行；若这是样品指定的待购建筑，也按实体牌面处理";
   if (spaceId.startsWith("adv_")) {
     const item = state.advanced[Number(spaceId.slice(4))];
     const card = item ? cardById.get(item.id) : null;
@@ -2903,7 +2985,12 @@ function loadState() {
     next.pendingHumanSpace = next.pendingHumanSpace || null;
     next.pendingHarborTarget = next.pendingHarborTarget || null;
     next.pendingAmbassadorSpace = next.pendingAmbassadorSpace || null;
-    next.customSlotCount = normalizeCustomSlotCount(next.customSlotCount, next.occupied);
+    next.customSlotNames = normalizeCustomSlotNames(next.customSlotNames);
+    if (!parsed.customSlotNames && !hasOccupiedCustomSlot(next.occupied)) {
+      next.customSlotCount = 0;
+    } else {
+      next.customSlotCount = normalizeCustomSlotCount(next.customSlotCount, next.occupied);
+    }
     next.specialAdjust = Boolean(next.specialAdjust);
     next.specialPlaceOwner = normalizeOccupantOwner(next.specialPlaceOwner);
     next.pendingSpecialMove = normalizePendingSpecialMoveForState(next.pendingSpecialMove, next);
@@ -2927,6 +3014,20 @@ function normalizePendingSpecialMoveForState(move, sourceState) {
   const from = move?.from;
   if (!owner || !from || sourceState?.occupied?.[from] !== owner) return null;
   return { from, owner };
+}
+
+function normalizeCustomSlotNames(names) {
+  if (!names || typeof names !== "object") return {};
+  return Object.fromEntries(
+    Object.entries(names)
+      .filter(([spaceId]) => isCustomActionSpace(spaceId))
+      .map(([spaceId, name]) => [spaceId, String(name || "").trim()])
+      .filter(([, name]) => name)
+  );
+}
+
+function hasOccupiedCustomSlot(occupied) {
+  return Object.keys(occupied || {}).some((spaceId) => isCustomActionSpace(spaceId));
 }
 
 function renumberAdvancedOccupancy(occupied) {
